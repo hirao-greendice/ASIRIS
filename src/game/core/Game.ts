@@ -18,6 +18,9 @@ const MOVE_DURATION_SECONDS = 0.13;
 const WALL_WIDTH_IN_TILES = 1;
 const WALL_HEIGHT_IN_TILES = 88 / 64;
 const HERO_SIZE_IN_TILES = 1.25;
+const HERO_ATTACK_SIZE_IN_TILES = HERO_SIZE_IN_TILES * (512 / 384);
+const HERO_ATTACK_ORIGIN_Y = 448 / 512;
+const ATTACK_POSE_SECONDS = 0.18;
 
 const MOVEMENT: Record<HeroDirection, GridPoint> = {
   up: { x: 0, y: -1 },
@@ -130,7 +133,7 @@ export class Game {
       return;
     }
 
-    if (control === "primary") this.primaryPulse = 0.18;
+    if (control === "primary") this.primaryPulse = ATTACK_POSE_SECONDS;
     if (control === "secondary") this.secondaryPulse = 0.18;
   }
 
@@ -272,16 +275,8 @@ export class Game {
 
   private drawPlayer(): void {
     const x = this.playerDrawPosition.x + 0.5;
-    const centerY = this.playerDrawPosition.y + 0.5;
     const bottomY = this.playerDrawPosition.y + 1;
-
-    if (this.primaryPulse > 0) {
-      this.context.beginPath();
-      this.context.arc(x, centerY, 0.44, 0, Math.PI * 2);
-      this.context.strokeStyle = "rgba(246, 242, 235, 0.82)";
-      this.context.lineWidth = 0.08;
-      this.context.stroke();
-    }
+    const isAttacking = this.primaryPulse > 0;
 
     if (this.secondaryPulse > 0) {
       this.context.strokeStyle = "rgba(31, 28, 30, 0.72)";
@@ -299,13 +294,25 @@ export class Game {
       this.context.stroke();
     }
 
-    this.context.drawImage(
-      this.assets.hero[this.facing],
-      x - HERO_SIZE_IN_TILES / 2,
-      bottomY - HERO_SIZE_IN_TILES,
-      HERO_SIZE_IN_TILES,
-      HERO_SIZE_IN_TILES,
-    );
+    if (isAttacking) {
+      this.context.drawImage(
+        this.assets.hero.attack[this.facing],
+        x - HERO_ATTACK_SIZE_IN_TILES / 2,
+        bottomY - HERO_ATTACK_SIZE_IN_TILES * HERO_ATTACK_ORIGIN_Y,
+        HERO_ATTACK_SIZE_IN_TILES,
+        HERO_ATTACK_SIZE_IN_TILES,
+      );
+    } else {
+      this.context.drawImage(
+        this.assets.hero.idle[this.facing],
+        x - HERO_SIZE_IN_TILES / 2,
+        bottomY - HERO_SIZE_IN_TILES,
+        HERO_SIZE_IN_TILES,
+        HERO_SIZE_IN_TILES,
+      );
+    }
+
+    this.canvas.dataset.playerPose = isAttacking ? "attack" : "idle";
   }
 }
 
