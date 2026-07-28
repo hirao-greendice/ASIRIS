@@ -15,9 +15,9 @@ import {
 } from "./stageTypes";
 
 const MOVEMENT_TIMING = {
-  stepSeconds: 0.13,
+  stepSeconds: 0.18,
   holdDelaySeconds: 0.22,
-  repeatIntervalSeconds: 0.15,
+  repeatIntervalSeconds: 0.2,
 } as const;
 const WALL_WIDTH_IN_TILES = 1;
 const WALL_HEIGHT_IN_TILES = 88 / 64;
