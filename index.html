@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#11100f" />
+    <meta
+      name="description"
+      content="ミリしらソード — PCとスマートフォンで遊べるゲーム"
+    />
+    <title>ミリしらソード</title>
+  </head>
+  <body>
+    <main class="game-shell">
+      <header class="game-header">
+        <h1>ミリしらソード</h1>
+        <p class="keyboard-guide" aria-label="キーボード操作">
+          <span>MOVE&nbsp; WASD / ↑↓←→</span>
+          <span>ACTION&nbsp; SPACE / ENTER</span>
+        </p>
+      </header>
+
+      <section class="stage-frame" aria-label="ゲーム画面">
+        <canvas id="game-canvas" tabindex="0">
+          このブラウザはCanvasに対応していません。
+        </canvas>
+      </section>
+
+      <section class="touch-controls" aria-label="ゲーム操作">
+        <div class="d-pad" aria-label="方向ボタン">
+          <button class="control-button direction up" data-control="up" aria-label="上">
+            <span aria-hidden="true">↑</span>
+          </button>
+          <button class="control-button direction left" data-control="left" aria-label="左">
+            <span aria-hidden="true">←</span>
+          </button>
+          <button class="control-button direction down" data-control="down" aria-label="下">
+            <span aria-hidden="true">↓</span>
+          </button>
+          <button class="control-button direction right" data-control="right" aria-label="右">
+            <span aria-hidden="true">→</span>
+          </button>
+          <span class="d-pad-center" aria-hidden="true"></span>
+        </div>
+
+        <div class="action-pad" aria-label="アクションボタン">
+          <button class="control-button action action-secondary" data-control="secondary">
+            <span>B</span>
+          </button>
+          <button class="control-button action action-primary" data-control="primary">
+            <span>A</span>
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
