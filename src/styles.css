@@ -161,6 +161,8 @@ button {
   }
 
   .touch-controls {
+    --d-pad-cell: clamp(54px, 15vw, 72px);
+    --action-size: clamp(70px, 20vw, 88px);
     width: 100%;
     max-width: 520px;
     min-width: 0;
@@ -169,12 +171,11 @@ button {
     align-items: center;
     justify-content: space-between;
     align-self: stretch;
-    gap: clamp(12px, 4vw, 22px);
-    padding: 14px 4px 0;
+    gap: clamp(4px, 2vw, 14px);
+    padding: 14px 2px 0;
   }
 
   .d-pad {
-    --d-pad-cell: clamp(44px, 12vw, 56px);
     position: relative;
     display: grid;
     grid-template-columns: repeat(3, var(--d-pad-cell));
@@ -223,14 +224,15 @@ button {
   }
 
   .action-pad {
-    display: flex;
-    align-items: center;
-    height: clamp(108px, 28vw, 128px);
-    gap: clamp(10px, 3vw, 18px);
+    position: relative;
+    flex: 0 0 clamp(128px, 37vw, 163px);
+    width: clamp(128px, 37vw, 163px);
+    height: clamp(116px, 34vw, 150px);
   }
 
   .action {
-    width: clamp(58px, 16vw, 68px);
+    position: absolute;
+    width: var(--action-size);
     aspect-ratio: 1;
     display: grid;
     place-items: center;
@@ -242,11 +244,13 @@ button {
   }
 
   .action-secondary {
-    align-self: flex-end;
+    bottom: 0;
+    left: 0;
   }
 
   .action-primary {
-    align-self: flex-start;
+    top: 0;
+    right: 0;
   }
 }
 
@@ -257,16 +261,16 @@ button {
   }
 
   .touch-controls {
+    --d-pad-cell: 54px;
+    --action-size: 68px;
     min-height: 166px;
     padding-top: 2px;
   }
 
-  .d-pad {
-    --d-pad-cell: 48px;
-  }
-
-  .action {
-    width: 56px;
+  .action-pad {
+    flex-basis: 124px;
+    width: 124px;
+    height: 112px;
   }
 }
 
