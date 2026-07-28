@@ -19,3 +19,16 @@ npm.cmd run build
 
 ゲームの決定事項と今後の設計方針は
 [`docs/GAME_DESIGN.md`](docs/GAME_DESIGN.md) に記録します。
+
+## GitHub Pages
+
+`main` ブランチへpushすると、GitHub Actionsがビルドと公開を行います。
+
+公開URL:
+
+```text
+https://hirao-greendice.github.io/ASIRIS/
+```
+
+GitHubのリポジトリ設定では、`Settings → Pages → Source` を
+`GitHub Actions` にします。
