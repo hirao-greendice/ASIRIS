@@ -14,7 +14,11 @@ import {
   type TileKind,
 } from "./stageTypes";
 
-const MOVE_DURATION_SECONDS = 0.13;
+const MOVEMENT_TIMING = {
+  stepSeconds: 0.13,
+  holdDelaySeconds: 0.22,
+  repeatIntervalSeconds: 0.15,
+} as const;
 const WALL_WIDTH_IN_TILES = 1;
 const WALL_HEIGHT_IN_TILES = 88 / 64;
 const HERO_SIZE_IN_TILES = 1.25;
@@ -49,6 +53,8 @@ export class Game {
   private readonly playerTile: GridPoint;
   private readonly playerDrawPosition: GridPoint;
   private moveAnimation: MoveAnimation | null = null;
+  private repeatDirection: HeroDirection | null = null;
+  private repeatCountdown = 0;
   private facing: HeroDirection = "down";
   private primaryPulse = 0;
   private secondaryPulse = 0;
@@ -102,34 +108,32 @@ export class Game {
 
     if (this.moveAnimation) {
       this.updateMoveAnimation(deltaSeconds);
-    } else {
+    }
+
+    this.updateRepeatTimer(deltaSeconds);
+
+    if (!this.moveAnimation) {
       const control = this.input.consumeNextPress();
-      if (control) this.handleControl(control);
+      if (control) {
+        this.handleControl(control);
+      } else {
+        this.tryRepeatMove();
+      }
     }
 
     this.camera.update(this.playerTile, deltaSeconds);
     this.canvas.dataset.playerTile =
       `${this.playerTile.x},${this.playerTile.y}`;
     this.canvas.dataset.cameraArea = this.camera.areaId;
+    this.canvas.dataset.playerFacing = this.facing;
   }
 
   private handleControl(control: GameControl): void {
     if (isHeroDirection(control)) {
-      const movement = MOVEMENT[control];
       this.facing = control;
-      const destination = {
-        x: this.playerTile.x + movement.x,
-        y: this.playerTile.y + movement.y,
-      };
-
-      if (!isWalkable(this.stage, destination)) return;
-
-      this.moveAnimation = {
-        from: { ...this.playerDrawPosition },
-        to: destination,
-        elapsed: 0,
-      };
-      Object.assign(this.playerTile, destination);
+      this.repeatDirection = control;
+      this.repeatCountdown = MOVEMENT_TIMING.holdDelaySeconds;
+      this.startMove(control);
       return;
     }
 
@@ -137,12 +141,50 @@ export class Game {
     if (control === "secondary") this.secondaryPulse = 0.18;
   }
 
+  private startMove(direction: HeroDirection): void {
+    const movement = MOVEMENT[direction];
+    const destination = {
+      x: this.playerTile.x + movement.x,
+      y: this.playerTile.y + movement.y,
+    };
+
+    if (!isWalkable(this.stage, destination)) return;
+
+    this.moveAnimation = {
+      from: { ...this.playerDrawPosition },
+      to: destination,
+      elapsed: 0,
+    };
+    Object.assign(this.playerTile, destination);
+  }
+
+  private updateRepeatTimer(deltaSeconds: number): void {
+    if (
+      !this.repeatDirection ||
+      !this.input.isPressed(this.repeatDirection)
+    ) {
+      this.repeatDirection = null;
+      this.repeatCountdown = 0;
+      return;
+    }
+
+    this.repeatCountdown -= deltaSeconds;
+  }
+
+  private tryRepeatMove(): void {
+    if (!this.repeatDirection || this.repeatCountdown > 0) return;
+
+    this.facing = this.repeatDirection;
+    this.startMove(this.repeatDirection);
+    this.repeatCountdown = MOVEMENT_TIMING.repeatIntervalSeconds;
+  }
+
   private updateMoveAnimation(deltaSeconds: number): void {
     if (!this.moveAnimation) return;
 
     this.moveAnimation.elapsed += deltaSeconds;
     const progress = Math.min(
-      this.moveAnimation.elapsed / MOVE_DURATION_SECONDS,
+      this.moveAnimation.elapsed / MOVEMENT_TIMING.stepSeconds,
       1,
     );
     const eased = 1 - (1 - progress) ** 3;

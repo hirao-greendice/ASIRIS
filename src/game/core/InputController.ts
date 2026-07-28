@@ -33,6 +33,7 @@ export class InputController {
 
     this.buttons.forEach((button) => {
       button.addEventListener("pointerdown", this.handlePointerDown);
+      button.addEventListener("pointermove", this.handlePointerMove);
       button.addEventListener("pointerup", this.handlePointerEnd);
       button.addEventListener("pointercancel", this.handlePointerEnd);
       button.addEventListener("lostpointercapture", this.handlePointerEnd);
@@ -48,8 +49,8 @@ export class InputController {
   }
 
   /**
-   * Returns one physical key/button press at a time.
-   * Holding a direction does not create additional moves.
+   * Returns one physical key/button press at a time. Directional hold-repeat
+   * is timed by the game so releasing never leaves buffered repeat steps.
    */
   consumeNextPress(): GameControl | undefined {
     return this.pendingPresses.shift();
@@ -62,6 +63,7 @@ export class InputController {
 
     this.buttons.forEach((button) => {
       button.removeEventListener("pointerdown", this.handlePointerDown);
+      button.removeEventListener("pointermove", this.handlePointerMove);
       button.removeEventListener("pointerup", this.handlePointerEnd);
       button.removeEventListener("pointercancel", this.handlePointerEnd);
       button.removeEventListener("lostpointercapture", this.handlePointerEnd);
@@ -96,16 +98,50 @@ export class InputController {
 
     event.preventDefault();
     button.setPointerCapture(event.pointerId);
-    button.dataset.pressed = "true";
     this.pointers.set(event.pointerId, control);
     this.pendingPresses.push(control);
+    this.syncPointerButtonStates();
     document.body.dataset.input = "touch";
   };
 
+  private handlePointerMove = (event: PointerEvent): void => {
+    const sourceButton = event.currentTarget as HTMLButtonElement;
+    if (
+      !sourceButton.classList.contains("direction") ||
+      !sourceButton.hasPointerCapture(event.pointerId)
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    const dPad = sourceButton.closest(".d-pad");
+    const elementAtPointer = document.elementFromPoint(
+      event.clientX,
+      event.clientY,
+    );
+    const targetButton =
+      elementAtPointer?.closest<HTMLButtonElement>(".direction[data-control]") ??
+      null;
+    const validTarget =
+      targetButton?.closest(".d-pad") === dPad ? targetButton : null;
+    const nextControl = validTarget?.dataset.control as GameControl | undefined;
+    const previousControl = this.pointers.get(event.pointerId);
+
+    if (nextControl === previousControl) return;
+
+    if (nextControl) {
+      this.pointers.set(event.pointerId, nextControl);
+      this.pendingPresses.push(nextControl);
+    } else {
+      this.pointers.delete(event.pointerId);
+    }
+
+    this.syncPointerButtonStates();
+  };
+
   private handlePointerEnd = (event: PointerEvent): void => {
-    const button = event.currentTarget as HTMLButtonElement;
-    button.removeAttribute("data-pressed");
     this.pointers.delete(event.pointerId);
+    this.syncPointerButtonStates();
   };
 
   private reset = (): void => {
@@ -114,6 +150,19 @@ export class InputController {
     this.pendingPresses.length = 0;
     this.buttons.forEach((button) => button.removeAttribute("data-pressed"));
   };
+
+  private syncPointerButtonStates(): void {
+    const activeControls = new Set(this.pointers.values());
+
+    this.buttons.forEach((button) => {
+      const control = button.dataset.control as GameControl | undefined;
+      if (control && activeControls.has(control)) {
+        button.dataset.pressed = "true";
+      } else {
+        button.removeAttribute("data-pressed");
+      }
+    });
+  }
 
   private preventContextMenu = (event: MouseEvent): void => {
     event.preventDefault();

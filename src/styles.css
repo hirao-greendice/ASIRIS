@@ -22,6 +22,9 @@ body {
   min-height: 100%;
   margin: 0;
   overscroll-behavior: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 body {
