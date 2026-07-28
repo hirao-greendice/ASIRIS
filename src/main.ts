@@ -1,6 +1,8 @@
 import "./styles.css";
-import { GamePreview } from "./game/core/GamePreview";
+import { loadGameAssets } from "./game/assets/GameAssets";
+import { Game } from "./game/core/Game";
 import { InputController } from "./game/core/InputController";
+import { stage01 } from "./game/data/stage01";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#game-canvas");
 const controlButtons =
@@ -11,7 +13,8 @@ if (!canvas) {
 }
 
 const input = new InputController(controlButtons);
-const game = new GamePreview(canvas, input);
+const assets = await loadGameAssets();
+const game = new Game(canvas, input, stage01, assets);
 
 canvas.addEventListener("pointerdown", () => canvas.focus());
 

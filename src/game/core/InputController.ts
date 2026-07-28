@@ -22,6 +22,7 @@ const CONTROLLED_KEYS = new Map<string, GameControl>([
 export class InputController {
   private readonly keyboard = new Set<GameControl>();
   private readonly pointers = new Map<number, GameControl>();
+  private readonly pendingPresses: GameControl[] = [];
   private readonly buttons: HTMLButtonElement[];
 
   constructor(buttons: Iterable<HTMLButtonElement>) {
@@ -46,6 +47,14 @@ export class InputController {
     );
   }
 
+  /**
+   * Returns one physical key/button press at a time.
+   * Holding a direction does not create additional moves.
+   */
+  consumeNextPress(): GameControl | undefined {
+    return this.pendingPresses.shift();
+  }
+
   destroy(): void {
     window.removeEventListener("keydown", this.handleKeyDown);
     window.removeEventListener("keyup", this.handleKeyUp);
@@ -65,7 +74,10 @@ export class InputController {
     if (!control) return;
 
     event.preventDefault();
+    if (event.repeat) return;
+
     this.keyboard.add(control);
+    this.pendingPresses.push(control);
     document.body.dataset.input = "keyboard";
   };
 
@@ -86,6 +98,7 @@ export class InputController {
     button.setPointerCapture(event.pointerId);
     button.dataset.pressed = "true";
     this.pointers.set(event.pointerId, control);
+    this.pendingPresses.push(control);
     document.body.dataset.input = "touch";
   };
 
@@ -98,6 +111,7 @@ export class InputController {
   private reset = (): void => {
     this.keyboard.clear();
     this.pointers.clear();
+    this.pendingPresses.length = 0;
     this.buttons.forEach((button) => button.removeAttribute("data-pressed"));
   };
 
