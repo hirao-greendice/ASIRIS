@@ -5,10 +5,11 @@ import {
   type NamedObjectDefinition,
   type PuzzleDefinition,
   type StageDefinition,
+  type SwordMode,
 } from "./stageTypes";
 
 const LETTER_SPAWN_SECONDS = 0.32;
-const LETTER_TRANSFORM_SECONDS = 0.3;
+const LETTER_FUSION_SECONDS = 0.34;
 const COMPLETION_DELAY_SECONDS = 0.46;
 
 const MOVEMENT: Record<HeroDirection, GridPoint> = {
@@ -32,7 +33,7 @@ export interface LetterState {
   hasLanded: boolean;
   spawnFrom: GridPoint;
   spawnElapsed: number;
-  transformElapsed: number | null;
+  fusionElapsed: number | null;
 }
 
 export interface PuzzleState {
@@ -44,19 +45,24 @@ export interface PuzzleState {
   solvedElapsed: number;
 }
 
+export interface PushedLetter {
+  id: string;
+  from: GridPoint;
+}
+
 export type MoveResult =
   | { moved: false }
   | {
       moved: true;
       destination: GridPoint;
-      pushedLetterId?: string;
-      pushedLetterFrom?: GridPoint;
+      pushedLetters?: readonly PushedLetter[];
       advancesStage?: boolean;
-      fixedLetter?: boolean;
+      fusedResult?: string;
     };
 
 export interface AttackResult {
   cutName?: string;
+  blockedName?: string;
 }
 
 export interface WorldUpdateResult {
@@ -66,6 +72,7 @@ export interface WorldUpdateResult {
 export class WorldState {
   readonly playerTile: GridPoint;
   facing: HeroDirection;
+  swordMode: SwordMode = "kana";
   private puzzleStates: PuzzleState[];
   private activePuzzleIndex = 0;
   private prototypeClear = false;
@@ -90,6 +97,15 @@ export class WorldState {
     return this.prototypeClear;
   }
 
+  getObjectName(object: NamedObjectDefinition): string {
+    return object.names[this.swordMode];
+  }
+
+  toggleSwordMode(): SwordMode {
+    this.swordMode = this.swordMode === "kana" ? "english" : "kana";
+    return this.swordMode;
+  }
+
   update(deltaSeconds: number): WorldUpdateResult {
     const puzzle = this.activePuzzle;
     if (!puzzle) return { puzzleSolved: false };
@@ -102,10 +118,10 @@ export class WorldState {
         );
         letter.hasLanded = letter.spawnElapsed >= LETTER_SPAWN_SECONDS;
       }
-      if (letter.transformElapsed !== null) {
-        letter.transformElapsed = Math.min(
-          LETTER_TRANSFORM_SECONDS,
-          letter.transformElapsed + deltaSeconds,
+      if (letter.fusionElapsed !== null) {
+        letter.fusionElapsed = Math.min(
+          LETTER_FUSION_SECONDS,
+          letter.fusionElapsed + deltaSeconds,
         );
       }
     }
@@ -144,22 +160,40 @@ export class WorldState {
     );
     if (!object) return {};
 
+    const name = this.getObjectName(object.definition);
+    const characters = Array.from(name);
+    const spawns = characters.map((_, index) => ({
+      x: object.definition.position.x + index,
+      y: object.definition.position.y,
+    }));
+    const canSpawn = spawns.every(
+      (spawn) =>
+        isWalkable(this.stage, spawn) &&
+        !this.findLetter(puzzle, spawn) &&
+        !puzzle.objects.some(
+          (candidate) =>
+            candidate.definition.id !== object.definition.id &&
+            !candidate.isCut &&
+            pointsEqual(candidate.definition.position, spawn),
+        ),
+    );
+    if (!canSpawn) return { blockedName: name };
+
     object.isCut = true;
-    Array.from(object.definition.name).forEach((character, index) => {
-      const spawn = object.definition.letterSpawns[index];
+    characters.forEach((character, index) => {
       puzzle.letters.push({
-        id: `${object.definition.id}-letter-${index}`,
+        id: `${object.definition.id}-${this.swordMode}-letter-${index}`,
         sourceObjectId: object.definition.id,
         character,
-        position: { ...spawn },
+        position: spawns[index],
         isFixed: false,
         hasLanded: false,
         spawnFrom: { ...object.definition.position },
         spawnElapsed: 0,
-        transformElapsed: null,
+        fusionElapsed: null,
       });
     });
-    return { cutName: object.definition.name };
+    return { cutName: name };
   }
 
   tryMove(direction: HeroDirection): MoveResult {
@@ -185,32 +219,82 @@ export class WorldState {
     if (!isWalkable(this.stage, destination)) return { moved: false };
     if (this.findStandingObject(puzzle, destination)) return { moved: false };
 
-    const letter = this.findLetter(puzzle, destination);
-    if (!letter) {
+    const firstLetter = this.findLetter(puzzle, destination);
+    if (!firstLetter) {
       Object.assign(this.playerTile, destination);
       return { moved: true, destination };
     }
-    if (letter.isFixed || !letter.hasLanded) return { moved: false };
 
-    const pushedTo = {
-      x: destination.x + movement.x,
-      y: destination.y + movement.y,
-    };
-    if (!this.canLetterOccupy(puzzle, pushedTo, letter.id)) {
+    const chain = this.collectLetterChain(puzzle, destination, movement);
+    if (
+      chain.length === 0 ||
+      chain.some((letter) => letter.isFixed || !letter.hasLanded)
+    ) {
       return { moved: false };
     }
 
-    const pushedLetterFrom = { ...letter.position };
-    Object.assign(letter.position, pushedTo);
-    const fixedLetter = this.tryFixLetter(puzzle, letter);
-    Object.assign(this.playerTile, destination);
-    return {
-      moved: true,
-      destination,
-      pushedLetterId: letter.id,
-      pushedLetterFrom,
-      fixedLetter,
+    const afterChain = {
+      x: destination.x + movement.x * chain.length,
+      y: destination.y + movement.y * chain.length,
     };
+    const pressureRule = !isWalkable(this.stage, afterChain)
+      ? this.findFusionRule(puzzle, chain)
+      : undefined;
+
+    if (pressureRule) {
+      const fusedPosition = { ...chain[chain.length - 1].position };
+      const fusedLetter: LetterState = {
+        id:
+          `${puzzle.definition.id}-fusion-` +
+          chain.map((letter) => letter.id).join("-"),
+        sourceObjectId: chain
+          .map((letter) => letter.sourceObjectId)
+          .join("+"),
+        character: pressureRule.result,
+        position: fusedPosition,
+        isFixed:
+          pressureRule.result === puzzle.definition.goal.result &&
+          pointsEqual(fusedPosition, puzzle.definition.goal.position),
+        hasLanded: true,
+        spawnFrom: { ...fusedPosition },
+        spawnElapsed: LETTER_SPAWN_SECONDS,
+        fusionElapsed: 0,
+      };
+      const fusedIds = new Set(chain.map((letter) => letter.id));
+      puzzle.letters = puzzle.letters.filter(
+        (letter) => !fusedIds.has(letter.id),
+      );
+      puzzle.letters.push(fusedLetter);
+      Object.assign(this.playerTile, destination);
+
+      if (fusedLetter.isFixed && puzzle.completionCountdown === null) {
+        puzzle.completionCountdown = COMPLETION_DELAY_SECONDS;
+      }
+      return {
+        moved: true,
+        destination,
+        fusedResult: pressureRule.result,
+      };
+    }
+
+    if (
+      !isWalkable(this.stage, afterChain) ||
+      this.findStandingObject(puzzle, afterChain) ||
+      this.findLetter(puzzle, afterChain)
+    ) {
+      return { moved: false };
+    }
+
+    const pushedLetters = chain.map((letter) => ({
+      id: letter.id,
+      from: { ...letter.position },
+    }));
+    for (const letter of chain) {
+      letter.position.x += movement.x;
+      letter.position.y += movement.y;
+    }
+    Object.assign(this.playerTile, destination);
+    return { moved: true, destination, pushedLetters };
   }
 
   advanceStage(): "advanced" | "clear" {
@@ -237,6 +321,7 @@ export class WorldState {
       );
       this.activePuzzleIndex = 0;
       this.prototypeClear = false;
+      this.swordMode = "kana";
     } else if (this.activePuzzle) {
       this.puzzleStates[this.activePuzzleIndex] = createPuzzleState(
         this.activePuzzle.definition,
@@ -247,6 +332,39 @@ export class WorldState {
     const start = puzzle?.playerStart ?? this.stage.playerStart;
     Object.assign(this.playerTile, start);
     this.facing = puzzle?.playerFacing ?? "down";
+  }
+
+  private collectLetterChain(
+    puzzle: PuzzleState,
+    start: GridPoint,
+    movement: GridPoint,
+  ): LetterState[] {
+    const chain: LetterState[] = [];
+    let point = { ...start };
+
+    while (true) {
+      const letter = this.findLetter(puzzle, point);
+      if (!letter) return chain;
+      chain.push(letter);
+      point = {
+        x: point.x + movement.x,
+        y: point.y + movement.y,
+      };
+    }
+  }
+
+  private findFusionRule(
+    puzzle: PuzzleState,
+    chain: readonly LetterState[],
+  ) {
+    const components = chain.map((letter) => letter.character);
+    return puzzle.definition.fusionRules.find(
+      (rule) =>
+        rule.components.length === components.length &&
+        rule.components.every(
+          (component, index) => component === components[index],
+        ),
+    );
   }
 
   private findStandingObject(
@@ -263,53 +381,10 @@ export class WorldState {
   private findLetter(
     puzzle: PuzzleState,
     position: GridPoint,
-    ignoredId?: string,
   ): LetterState | undefined {
-    return puzzle.letters.find(
-      (letter) =>
-        letter.id !== ignoredId &&
-        pointsEqual(letter.position, position),
+    return puzzle.letters.find((letter) =>
+      pointsEqual(letter.position, position)
     );
-  }
-
-  private canLetterOccupy(
-    puzzle: PuzzleState,
-    position: GridPoint,
-    movingLetterId: string,
-  ): boolean {
-    return (
-      isWalkable(this.stage, position) &&
-      !this.findStandingObject(puzzle, position) &&
-      !this.findLetter(puzzle, position, movingLetterId)
-    );
-  }
-
-  private tryFixLetter(
-    puzzle: PuzzleState,
-    letter: LetterState,
-  ): boolean {
-    const slot = puzzle.definition.targetSlots.find((candidate) =>
-      pointsEqual(candidate.position, letter.position)
-    );
-    if (!slot || slot.expected !== letter.character) return false;
-
-    letter.isFixed = true;
-    if (slot.transform === "person-radical") {
-      letter.transformElapsed = 0;
-    }
-
-    const isComplete = puzzle.definition.targetSlots.every((target) =>
-      puzzle.letters.some(
-        (candidate) =>
-          candidate.isFixed &&
-          candidate.character === target.expected &&
-          pointsEqual(candidate.position, target.position),
-      )
-    );
-    if (isComplete && puzzle.completionCountdown === null) {
-      puzzle.completionCountdown = COMPLETION_DELAY_SECONDS;
-    }
-    return true;
   }
 }
 

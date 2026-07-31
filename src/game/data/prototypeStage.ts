@@ -5,179 +5,148 @@ import {
   type PuzzleDefinition,
   type RoomDefinition,
   type StageDefinition,
+  type SwordMode,
   type TileKind,
 } from "../core/stageTypes";
 
-const WORLD_WIDTH = 35;
+const WORLD_WIDTH = 38;
 const WORLD_HEIGHT = 12;
 const CAMERA_OUTER_MARGIN_TILES = 0.5;
 
 const roomBlueprints = [
   {
     id: "prototype-room-1",
-    name: "ステージ1「林」",
+    name: "ステージ1「MOON」",
     bounds: { x: 0, y: 0, width: 9, height: 10 },
     trigger: { x: 0, y: 0, width: 9, height: 10 },
   },
   {
     id: "prototype-room-2",
-    name: "ステージ2「明」",
+    name: "ステージ2「仏」",
     bounds: { x: 8, y: 1, width: 10, height: 9 },
     trigger: { x: 9, y: 1, width: 9, height: 9 },
   },
   {
     id: "prototype-room-3",
-    name: "ステージ3「仏」",
-    bounds: { x: 17, y: 0, width: 9, height: 10 },
-    trigger: { x: 18, y: 0, width: 8, height: 10 },
+    name: "ステージ3「休」",
+    bounds: { x: 17, y: 0, width: 12, height: 10 },
+    trigger: { x: 18, y: 0, width: 11, height: 10 },
   },
   {
     id: "prototype-room-4",
-    name: "ステージ4「休」",
-    bounds: { x: 25, y: 0, width: 10, height: 11 },
-    trigger: { x: 26, y: 0, width: 9, height: 11 },
+    name: "ステージ4「SUNDAY」",
+    bounds: { x: 28, y: 0, width: 10, height: 11 },
+    trigger: { x: 29, y: 0, width: 9, height: 11 },
   },
 ] as const;
 
 const puzzles: readonly PuzzleDefinition[] = [
   {
-    id: "forest",
+    id: "moon-pressure",
     roomId: "prototype-room-1",
     number: 1,
-    title: "林",
-    answer: "林",
-    hint: "「木」を2本斬り、木の文字を左右の枠へ",
-    playerStart: { x: 2, y: 5 },
-    playerFacing: "right",
+    title: "MOON",
+    answer: "MOON",
+    hint: "英語剣へ切り替え、月の名前を右の壁へ押しつける",
+    playerStart: { x: 1, y: 5 },
+    playerFacing: "up",
     namedObjects: [
       {
-        id: "tree-upper",
-        name: "木",
-        kind: "tree",
-        position: { x: 2, y: 2 },
-        letterSpawns: [{ x: 4, y: 3 }],
-      },
-      {
-        id: "tree-lower",
-        name: "木",
-        kind: "tree",
-        position: { x: 2, y: 7 },
-        letterSpawns: [{ x: 4, y: 7 }],
+        id: "moon",
+        names: { kana: "つき", english: "MOON" },
+        kind: "moon",
+        position: { x: 2, y: 4 },
       },
     ],
-    targetSlots: [
-      { id: "forest-left", position: { x: 5, y: 4 }, expected: "木" },
-      { id: "forest-right", position: { x: 6, y: 4 }, expected: "木" },
+    fusionRules: [
+      { components: ["M", "O", "O", "N"], result: "MOON" },
     ],
+    goal: { position: { x: 5, y: 4 }, result: "MOON" },
     door: { position: { x: 8, y: 5 } },
   },
   {
-    id: "bright",
+    id: "buddha-pressure",
     roomId: "prototype-room-2",
     number: 2,
-    title: "明",
-    answer: "明",
-    hint: "「日」は左へ、「月」は右へ",
+    title: "仏",
+    answer: "仏",
+    hint: "かな剣で斬り、ス・ラを退けて「イム」を壁へ",
     playerStart: { x: 10, y: 5 },
-    playerFacing: "right",
+    playerFacing: "up",
     namedObjects: [
       {
-        id: "sun",
-        name: "日",
-        kind: "sun",
-        position: { x: 10, y: 3 },
-        letterSpawns: [{ x: 13, y: 3 }],
-      },
-      {
-        id: "moon",
-        name: "月",
-        kind: "moon",
-        position: { x: 10, y: 7 },
-        letterSpawns: [{ x: 13, y: 7 }],
+        id: "slime-buddha",
+        names: { kana: "スライム", english: "SLIME" },
+        kind: "slime",
+        position: { x: 11, y: 4 },
       },
     ],
-    targetSlots: [
-      { id: "bright-left", position: { x: 15, y: 4 }, expected: "日" },
-      { id: "bright-right", position: { x: 16, y: 4 }, expected: "月" },
+    fusionRules: [
+      { components: ["イ", "ム"], result: "仏" },
     ],
+    goal: { position: { x: 15, y: 4 }, result: "仏" },
     door: { position: { x: 17, y: 5 } },
   },
   {
-    id: "buddha",
+    id: "rest-pressure",
     roomId: "prototype-room-3",
     number: 3,
-    title: "仏",
-    answer: "仏",
-    hint: "名前は必ず、すべての文字になる",
+    title: "休",
+    answer: "休",
+    hint: "「イ」と「木」を右端へ集め、壁へ押しつける",
     playerStart: { x: 19, y: 5 },
     playerFacing: "right",
     namedObjects: [
       {
-        id: "slime-buddha",
-        name: "スライム",
-        kind: "slime",
-        position: { x: 20, y: 4 },
-        letterSpawns: [
-          { x: 19, y: 2 },
-          { x: 20, y: 2 },
-          { x: 21, y: 3 },
-          { x: 21, y: 7 },
-        ],
-      },
-    ],
-    targetSlots: [
-      {
-        id: "buddha-left",
-        position: { x: 23, y: 4 },
-        expected: "イ",
-        transform: "person-radical",
-      },
-      { id: "buddha-right", position: { x: 24, y: 4 }, expected: "ム" },
-    ],
-    door: { position: { x: 25, y: 5 } },
-    showAnswerSilhouette: true,
-  },
-  {
-    id: "rest",
-    roomId: "prototype-room-4",
-    number: 4,
-    title: "休",
-    answer: "休",
-    hint: "前のひらめきを、別の名前に組み合わせる",
-    playerStart: { x: 27, y: 5 },
-    playerFacing: "right",
-    namedObjects: [
-      {
         id: "tree-rest",
-        name: "木",
+        names: { kana: "木", english: "TREE" },
         kind: "tree",
-        position: { x: 28, y: 2 },
-        letterSpawns: [{ x: 33, y: 2 }],
+        position: { x: 23, y: 2 },
       },
       {
         id: "slime-rest",
-        name: "スライム",
+        names: { kana: "スライム", english: "SLIME" },
         kind: "slime",
-        position: { x: 28, y: 6 },
-        letterSpawns: [
-          { x: 27, y: 8 },
-          { x: 28, y: 8 },
-          { x: 30, y: 7 },
-          { x: 29, y: 8 },
-        ],
+        position: { x: 19, y: 7 },
       },
     ],
-    targetSlots: [
+    fusionRules: [
+      { components: ["イ", "木"], result: "休" },
+    ],
+    goal: { position: { x: 27, y: 4 }, result: "休" },
+    door: { position: { x: 28, y: 5 } },
+  },
+  {
+    id: "sunday-pressure",
+    roomId: "prototype-room-4",
+    number: 4,
+    title: "SUNDAY",
+    answer: "SUNDAY",
+    hint: "英語剣で SUN と DAY を一直線にし、まとめて圧着する",
+    playerStart: { x: 30, y: 6 },
+    playerFacing: "up",
+    namedObjects: [
       {
-        id: "rest-left",
-        position: { x: 32, y: 4 },
-        expected: "イ",
-        transform: "person-radical",
+        id: "sun-sunday",
+        names: { kana: "ひ", english: "SUN" },
+        kind: "sun",
+        position: { x: 30, y: 4 },
       },
-      { id: "rest-right", position: { x: 33, y: 4 }, expected: "木" },
+      {
+        id: "day-sunday",
+        names: { kana: "ようび", english: "DAY" },
+        kind: "calendar",
+        position: { x: 33, y: 4 },
+      },
     ],
-    door: { position: { x: 34, y: 5 } },
-    showAnswerSilhouette: true,
+    fusionRules: [
+      {
+        components: ["S", "U", "N", "D", "A", "Y"],
+        result: "SUNDAY",
+      },
+    ],
+    goal: { position: { x: 35, y: 4 }, result: "SUNDAY" },
+    door: { position: { x: 37, y: 5 } },
   },
 ];
 
@@ -186,7 +155,7 @@ const rooms = roomBlueprints.map<RoomDefinition>((room, index) => ({
   ...room,
   view: createSquareCameraView(room.bounds),
   transitionMs: 240,
-  puzzleAnchor: { ...puzzles[index].targetSlots[0].position },
+  puzzleAnchor: { ...puzzles[index].goal.position },
 }));
 
 const stage: StageDefinition = {
@@ -221,6 +190,12 @@ function createWorldTiles(): TileKind[][] {
     }
   }
 
+  // Each fusion lane ends in a visible wall. Components only merge when the
+  // player compresses the complete sequence against one of these stops.
+  worldTiles[4][6] = "wall";
+  worldTiles[4][16] = "wall";
+  worldTiles[4][36] = "wall";
+
   return worldTiles;
 }
 
@@ -251,43 +226,53 @@ function validatePrototypeStage(stageToValidate: StageDefinition): void {
     if (!roomIds.has(puzzle.roomId)) {
       throw new Error(`${puzzle.id} refers to an unknown room.`);
     }
-    if (!isWalkable(stageToValidate, puzzle.playerStart)) {
-      throw new Error(`${puzzle.id} has a player start on a wall.`);
-    }
+    validateFreePoint(stageToValidate, puzzle.playerStart, puzzle.id);
+    validateFreePoint(
+      stageToValidate,
+      puzzle.goal.position,
+      `${puzzle.id} goal`,
+    );
     if (isWalkable(stageToValidate, puzzle.door.position)) {
       throw new Error(`${puzzle.id} door must replace a wall tile.`);
     }
+    if (
+      puzzle.answer !== puzzle.goal.result ||
+      !puzzle.fusionRules.some(
+        (rule) => rule.result === puzzle.goal.result,
+      )
+    ) {
+      throw new Error(`${puzzle.id} needs a fusion rule for its answer.`);
+    }
 
-    const occupiedAtStart = new Set<string>();
+    const occupiedObjects = new Set<string>();
     for (const object of puzzle.namedObjects) {
-      const characters = Array.from(object.name);
-      if (characters.length !== object.letterSpawns.length) {
-        throw new Error(
-          `${object.id} needs one spawn tile for every character in its name.`,
-        );
-      }
       validateFreePoint(stageToValidate, object.position, object.id);
-      addUniquePoint(occupiedAtStart, object.position, object.id);
+      addUniquePoint(occupiedObjects, object.position, object.id);
 
-      object.letterSpawns.forEach((point, index) => {
-        validateFreePoint(stageToValidate, point, `${object.id}[${index}]`);
-        addUniquePoint(occupiedAtStart, point, `${object.id}[${index}]`);
-      });
-    }
-
-    for (const slot of puzzle.targetSlots) {
-      validateFreePoint(stageToValidate, slot.position, slot.id);
-    }
-
-    const availableCharacters = puzzle.namedObjects.flatMap((object) =>
-      Array.from(object.name)
-    );
-    for (const slot of puzzle.targetSlots) {
-      const characterIndex = availableCharacters.indexOf(slot.expected);
-      if (characterIndex < 0) {
-        throw new Error(`${puzzle.id} cannot produce ${slot.expected}.`);
+      for (const mode of ["kana", "english"] as const satisfies readonly SwordMode[]) {
+        const characters = Array.from(object.names[mode]);
+        if (characters.length === 0) {
+          throw new Error(`${object.id} has an empty ${mode} name.`);
+        }
+        characters.forEach((_, index) => {
+          validateFreePoint(
+            stageToValidate,
+            {
+              x: object.position.x + index,
+              y: object.position.y,
+            },
+            `${object.id}.${mode}[${index}]`,
+          );
+        });
       }
-      availableCharacters.splice(characterIndex, 1);
+    }
+
+    const wallAfterGoal = {
+      x: puzzle.goal.position.x + 1,
+      y: puzzle.goal.position.y,
+    };
+    if (isWalkable(stageToValidate, wallAfterGoal)) {
+      throw new Error(`${puzzle.id} goal needs a pressure wall on its right.`);
     }
   }
 }

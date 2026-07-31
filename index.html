@@ -15,12 +15,14 @@
       <header class="game-header">
         <div class="game-title-row">
           <h1>ミリしらソード</h1>
-          <p class="stage-label" data-stage-label>STAGE 1 / 4　「林」</p>
+          <p class="stage-label" data-stage-label>STAGE 1 / 4　「MOON」</p>
+          <p class="sword-label" data-sword-label>剣：かな</p>
         </div>
         <div class="game-header-tools">
           <p class="keyboard-guide" aria-label="キーボード操作">
             <span>MOVE&nbsp; WASD / ↑↓←→</span>
             <span>SWORD&nbsp; SPACE</span>
+            <span>MODE&nbsp; E / ENTER</span>
             <span>RESET&nbsp; R</span>
           </p>
           <button
@@ -34,7 +36,7 @@
           <a class="editor-link" href="?editor=1" data-editor-link>EDITOR</a>
         </div>
         <p class="goal-label" data-goal-label>
-          「木」を2本斬り、木の文字を左右の枠へ
+          英語剣へ切り替え、月の名前を右の壁へ押しつける
         </p>
       </header>
 
@@ -65,10 +67,10 @@
           <button
             class="control-button action action-secondary"
             type="button"
-            data-control="reset"
-            aria-label="現在のステージをリセット"
+            data-control="switch"
+            aria-label="かな剣と英語剣を切り替える"
           >
-            <span>戻</span>
+            <span>切替</span>
           </button>
           <button
             class="control-button action action-primary"

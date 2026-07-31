@@ -11,6 +11,18 @@ export class SoundEffects {
     this.playTone(620, 0.11, 0.07, "sine", 180);
   }
 
+  fuse(): void {
+    this.playSequence([
+      [280, 0],
+      [520, 0.055],
+      [780, 0.12],
+    ]);
+  }
+
+  changeSword(): void {
+    this.playTone(360, 0.09, 0.05, "triangle", 190);
+  }
+
   solve(): void {
     this.playSequence([
       [420, 0],

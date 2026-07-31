@@ -4,6 +4,7 @@ export type GameControl =
   | "left"
   | "right"
   | "primary"
+  | "switch"
   | "reset";
 
 export type DirectionControl = Extract<
@@ -21,8 +22,9 @@ const CONTROLLED_KEYS = new Map<string, GameControl>([
   ["ArrowRight", "right"],
   ["KeyD", "right"],
   ["Space", "primary"],
+  ["KeyE", "switch"],
+  ["Enter", "switch"],
   ["KeyR", "reset"],
-  ["Enter", "reset"],
 ]);
 
 export class InputController {

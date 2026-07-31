@@ -35,29 +35,33 @@ export interface RoomDefinition extends CameraArea {
   puzzleAnchor: GridPoint;
 }
 
-export type NamedObjectKind = "tree" | "sun" | "moon" | "slime";
+export type NamedObjectKind =
+  | "tree"
+  | "sun"
+  | "moon"
+  | "slime"
+  | "calendar";
+export type SwordMode = "kana" | "english";
 
 export interface NamedObjectDefinition {
   id: string;
-  name: string;
+  names: Readonly<Record<SwordMode, string>>;
   kind: NamedObjectKind;
   position: GridPoint;
-  /**
-   * One deterministic landing tile for every Unicode character in `name`.
-   * The runtime always emits the full name in order.
-   */
-  letterSpawns: readonly GridPoint[];
-}
-
-export interface TargetSlotDefinition {
-  id: string;
-  position: GridPoint;
-  expected: string;
-  transform?: "person-radical";
 }
 
 export interface DoorDefinition {
   position: GridPoint;
+}
+
+export interface FusionRuleDefinition {
+  components: readonly string[];
+  result: string;
+}
+
+export interface PuzzleGoalDefinition {
+  position: GridPoint;
+  result: string;
 }
 
 export interface PuzzleDefinition {
@@ -70,9 +74,9 @@ export interface PuzzleDefinition {
   playerStart: GridPoint;
   playerFacing: "up" | "down" | "left" | "right";
   namedObjects: readonly NamedObjectDefinition[];
-  targetSlots: readonly TargetSlotDefinition[];
+  fusionRules: readonly FusionRuleDefinition[];
+  goal: PuzzleGoalDefinition;
   door: DoorDefinition;
-  showAnswerSilhouette?: boolean;
 }
 
 export interface StageDefinition {

@@ -11,13 +11,13 @@ import type {
 import {
   type GridPoint,
   type StageDefinition,
-  type TargetSlotDefinition,
   type TileKind,
 } from "./stageTypes";
 import {
   WorldState,
   type LetterState,
   type NamedObjectState,
+  type PushedLetter,
   type PuzzleState,
 } from "./WorldState";
 
@@ -33,7 +33,7 @@ const HERO_ATTACK_SIZE_IN_TILES = HERO_SIZE_IN_TILES * (512 / 384);
 const HERO_ATTACK_ORIGIN_Y = 448 / 512;
 const ATTACK_POSE_SECONDS = 0.18;
 const LETTER_SPAWN_SECONDS = 0.32;
-const LETTER_TRANSFORM_SECONDS = 0.3;
+const LETTER_FUSION_SECONDS = 0.34;
 const ANSWER_REVEAL_SECONDS = 1.18;
 const STAGE_BANNER_SECONDS = 1.1;
 
@@ -47,14 +47,14 @@ const MOVEMENT: Record<HeroDirection, GridPoint> = {
 export interface GameHud {
   stageLabel: HTMLElement;
   goalLabel: HTMLElement;
+  swordLabel: HTMLElement;
 }
 
 interface MoveAnimation {
   from: GridPoint;
   to: GridPoint;
   elapsed: number;
-  pushedLetterId?: string;
-  pushedLetterFrom?: GridPoint;
+  pushedLetters?: readonly PushedLetter[];
   advancesStage?: boolean;
 }
 
@@ -208,6 +208,13 @@ export class Game {
 
     if (control === "primary") {
       this.attack();
+      return;
+    }
+
+    if (control === "switch") {
+      this.world.toggleSwordMode();
+      this.soundEffects.changeSword();
+      this.syncHud();
     }
   }
 
@@ -218,15 +225,17 @@ export class Game {
     if (result.cutName) {
       this.canvas.dataset.lastCutName = result.cutName;
     }
+    if (result.blockedName) {
+      this.canvas.dataset.blockedCutName = result.blockedName;
+    }
   }
 
   private startMove(direction: HeroDirection): void {
     const result = this.world.tryMove(direction);
     if (!result.moved) return;
-    if (result.fixedLetter) this.soundEffects.lockLetter();
+    if (result.fusedResult) this.soundEffects.fuse();
     this.beginPlayerMove(result.destination, {
-      pushedLetterId: result.pushedLetterId,
-      pushedLetterFrom: result.pushedLetterFrom,
+      pushedLetters: result.pushedLetters,
       advancesStage: result.advancesStage,
     });
   }
@@ -235,7 +244,7 @@ export class Game {
     destination: GridPoint,
     details: Pick<
       MoveAnimation,
-      "pushedLetterId" | "pushedLetterFrom" | "advancesStage"
+      "pushedLetters" | "advancesStage"
     > = {},
   ): void {
     this.moveAnimation = {
@@ -334,6 +343,12 @@ export class Game {
   private syncHud(): void {
     if (!this.hud) return;
 
+    const isEnglish = this.world.swordMode === "english";
+    this.hud.swordLabel.textContent = isEnglish
+      ? "剣：ENGLISH"
+      : "剣：かな";
+    this.hud.swordLabel.dataset.mode = this.world.swordMode;
+
     if (this.world.isPrototypeClear) {
       this.hud.stageLabel.textContent = "COMPLETE";
       this.hud.goalLabel.textContent = "試作クリア";
@@ -372,6 +387,11 @@ export class Game {
       String(this.activePuzzle?.isSolved ?? false);
     this.canvas.dataset.prototypeClear =
       String(this.world.isPrototypeClear);
+    this.canvas.dataset.swordMode = this.world.swordMode;
+    this.canvas.dataset.letters =
+      this.activePuzzle?.letters
+        .map((letter) => letter.character)
+        .join("|") ?? "";
   }
 
   private draw(): void {
@@ -434,66 +454,40 @@ export class Game {
     const puzzle = this.activePuzzle;
     if (!puzzle) return;
 
-    const slots = puzzle.definition.targetSlots;
-    if (puzzle.definition.showAnswerSilhouette) {
-      const centerX =
-        slots.reduce((total, slot) => total + slot.position.x + 0.5, 0) /
-        slots.length;
-      const centerY =
-        slots.reduce((total, slot) => total + slot.position.y + 0.5, 0) /
-        slots.length;
-      this.context.save();
-      this.context.fillStyle = "rgba(233, 220, 236, 0.105)";
-      this.context.font =
-        '1.55px "Yu Mincho", "Hiragino Mincho ProN", serif';
-      this.context.textAlign = "center";
-      this.context.textBaseline = "middle";
-      this.context.fillText(
-        puzzle.definition.answer,
-        centerX,
-        centerY + 0.04,
-      );
-      this.context.restore();
-    }
-
-    for (const slot of slots) {
-      this.drawTargetSlot(puzzle, slot);
-    }
-  }
-
-  private drawTargetSlot(
-    puzzle: PuzzleState,
-    slot: TargetSlotDefinition,
-  ): void {
-    const fixedLetter = puzzle.letters.find(
+    const goal = puzzle.definition.goal;
+    const completedLetter = puzzle.letters.find(
       (letter) =>
         letter.isFixed &&
-        pointsEqual(letter.position, slot.position),
+        pointsEqual(letter.position, goal.position),
     );
-    const { x, y } = slot.position;
+    const { x, y } = goal.position;
 
     this.context.save();
-    if (fixedLetter) {
+    if (completedLetter) {
       const glow = 0.08 + (Math.sin(this.visualTime * 5) + 1) * 0.035;
       this.context.fillStyle = `rgba(199, 165, 204, ${glow})`;
       this.context.fillRect(x + 0.08, y + 0.08, 0.84, 0.84);
     }
     this.context.setLineDash([0.13, 0.09]);
-    this.context.strokeStyle = fixedLetter
+    this.context.strokeStyle = completedLetter
       ? "rgba(226, 205, 231, 0.82)"
       : "rgba(199, 165, 204, 0.72)";
     this.context.lineWidth = 0.045;
     this.context.strokeRect(x + 0.11, y + 0.11, 0.78, 0.78);
     this.context.setLineDash([]);
-
-    if (!fixedLetter && !puzzle.definition.showAnswerSilhouette) {
+    if (!completedLetter) {
       this.context.fillStyle = "rgba(233, 220, 236, 0.2)";
       this.context.font =
-        '0.5px "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif';
+        `${getLetterFontSize(goal.result) * 0.92}px ` +
+        '"Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif';
       this.context.textAlign = "center";
       this.context.textBaseline = "middle";
-      this.context.fillText(slot.expected, x + 0.5, y + 0.53);
+      this.context.fillText(goal.result, x + 0.5, y + 0.53);
     }
+    this.context.fillStyle = "rgba(199, 165, 204, 0.58)";
+    this.context.font = "0.22px sans-serif";
+    this.context.textAlign = "right";
+    this.context.fillText("圧着 →", x - 0.06, y + 0.52);
     this.context.restore();
   }
 
@@ -599,22 +593,23 @@ export class Game {
       };
     }
 
-    if (
-      this.moveAnimation?.pushedLetterId === letter.id &&
-      this.moveAnimation.pushedLetterFrom
-    ) {
+    const pushedLetter = this.moveAnimation?.pushedLetters?.find(
+      (candidate) => candidate.id === letter.id,
+    );
+    if (pushedLetter) {
       const progress = Math.min(
-        this.moveAnimation.elapsed / MOVEMENT_TIMING.stepSeconds,
+        (this.moveAnimation?.elapsed ?? 0) /
+          MOVEMENT_TIMING.stepSeconds,
         1,
       );
       return {
         x:
-          this.moveAnimation.pushedLetterFrom.x +
-          (letter.position.x - this.moveAnimation.pushedLetterFrom.x) *
+          pushedLetter.from.x +
+          (letter.position.x - pushedLetter.from.x) *
             progress,
         y:
-          this.moveAnimation.pushedLetterFrom.y +
-          (letter.position.y - this.moveAnimation.pushedLetterFrom.y) *
+          pushedLetter.from.y +
+          (letter.position.y - pushedLetter.from.y) *
             progress,
       };
     }
@@ -672,7 +667,8 @@ export class Game {
   }
 
   private drawNamedObject(object: NamedObjectState): void {
-    const { position, kind, name } = object.definition;
+    const { position, kind } = object.definition;
+    const name = this.world.getObjectName(object.definition);
     const x = position.x;
     const y = position.y;
 
@@ -730,7 +726,7 @@ export class Game {
       this.context.beginPath();
       this.context.arc(x + 0.61, y + 0.4, 0.3, 0, Math.PI * 2);
       this.context.fill();
-    } else {
+    } else if (kind === "slime") {
       this.context.fillStyle = "#8e75a3";
       this.context.beginPath();
       this.context.moveTo(x + 0.19, y + 0.72);
@@ -743,6 +739,22 @@ export class Game {
       this.context.arc(x + 0.4, y + 0.56, 0.035, 0, Math.PI * 2);
       this.context.arc(x + 0.6, y + 0.56, 0.035, 0, Math.PI * 2);
       this.context.fill();
+    } else {
+      this.context.fillStyle = "#ded7df";
+      this.context.fillRect(x + 0.2, y + 0.25, 0.6, 0.52);
+      this.context.fillStyle = "#8e75a3";
+      this.context.fillRect(x + 0.2, y + 0.25, 0.6, 0.14);
+      this.context.fillStyle = "#4b414f";
+      for (let row = 0; row < 2; row += 1) {
+        for (let column = 0; column < 3; column += 1) {
+          this.context.fillRect(
+            x + 0.29 + column * 0.17,
+            y + 0.47 + row * 0.15,
+            0.07,
+            0.06,
+          );
+        }
+      }
     }
 
     this.context.fillStyle = "rgba(10, 8, 12, 0.88)";
@@ -752,7 +764,7 @@ export class Game {
     this.context.strokeRect(x + 0.06, y + 0.01, 0.88, 0.29);
     this.context.fillStyle = "#f7f1f8";
     this.context.font =
-      `${name.length > 2 ? 0.2 : 0.25}px "Yu Gothic", sans-serif`;
+      `${getObjectNameFontSize(name)}px "Yu Gothic", sans-serif`;
     this.context.textAlign = "center";
     this.context.textBaseline = "middle";
     this.context.fillText(name, x + 0.5, y + 0.16);
@@ -763,7 +775,18 @@ export class Game {
     const spawnProgress = letter.hasLanded
       ? 1
       : easeOutCubic(letter.spawnElapsed / LETTER_SPAWN_SECONDS);
-    const size = 0.82 * (0.55 + spawnProgress * 0.45);
+    const fusionProgress =
+      letter.fusionElapsed === null
+        ? 1
+        : Math.min(letter.fusionElapsed / LETTER_FUSION_SECONDS, 1);
+    const fusionScale =
+      letter.fusionElapsed === null
+        ? 1
+        : 0.7 +
+          fusionProgress * 0.3 +
+          Math.sin(fusionProgress * Math.PI) * 0.18;
+    const size =
+      0.82 * (0.55 + spawnProgress * 0.45) * fusionScale;
     const x = tileX + 0.5 - size / 2;
     const y = tileY + 0.5 - size / 2;
 
@@ -782,34 +805,27 @@ export class Game {
     this.context.stroke();
     this.context.shadowBlur = 0;
 
-    const transformProgress =
-      letter.transformElapsed === null
-        ? 0
-        : Math.min(letter.transformElapsed / LETTER_TRANSFORM_SECONDS, 1);
-    if (letter.transformElapsed !== null && transformProgress < 1) {
-      this.drawLetterGlyph(
-        letter.character,
-        tileX,
-        tileY,
-        1 - transformProgress,
-        1 - transformProgress * 0.18,
+    if (letter.fusionElapsed !== null && fusionProgress < 1) {
+      this.context.strokeStyle =
+        `rgba(245, 232, 247, ${1 - fusionProgress})`;
+      this.context.lineWidth = 0.055;
+      this.context.beginPath();
+      this.context.arc(
+        tileX + 0.5,
+        tileY + 0.5,
+        0.48 + fusionProgress * 0.28,
+        0,
+        Math.PI * 2,
       );
-      this.drawLetterGlyph(
-        "亻",
-        tileX,
-        tileY,
-        transformProgress,
-        0.82 + transformProgress * 0.18,
-      );
-    } else {
-      this.drawLetterGlyph(
-        letter.transformElapsed === null ? letter.character : "亻",
-        tileX,
-        tileY,
-        1,
-        1,
-      );
+      this.context.stroke();
     }
+    this.drawLetterGlyph(
+      letter.character,
+      tileX,
+      tileY,
+      1,
+      fusionScale,
+    );
     this.context.restore();
   }
 
@@ -826,7 +842,8 @@ export class Game {
     this.context.scale(scale, scale);
     this.context.fillStyle = "#1a151d";
     this.context.font =
-      '700 0.52px "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif';
+      `700 ${getLetterFontSize(character)}px ` +
+      '"Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif';
     this.context.textAlign = "center";
     this.context.textBaseline = "middle";
     this.context.fillText(character, 0, 0);
@@ -870,7 +887,10 @@ export class Game {
     const angle = angles[this.world.facing];
     const movement = MOVEMENT[this.world.facing];
     this.context.save();
-    this.context.strokeStyle = "rgba(244, 232, 247, 0.82)";
+    this.context.strokeStyle =
+      this.world.swordMode === "english"
+        ? "rgba(174, 222, 226, 0.88)"
+        : "rgba(244, 232, 247, 0.82)";
     this.context.lineWidth = 0.07;
     this.context.beginPath();
     this.context.arc(
@@ -929,7 +949,9 @@ export class Game {
       this.context.shadowColor = "#c7a5cc";
       this.context.shadowBlur = width * 0.045;
       this.context.font =
-        `700 ${Math.round(width * 0.27)}px ` +
+        `700 ${Math.round(
+          width * getAnswerFontRatio(puzzle.definition.answer),
+        )}px ` +
         '"Yu Mincho", "Hiragino Mincho ProN", serif';
       this.context.textAlign = "center";
       this.context.textBaseline = "middle";
@@ -952,7 +974,7 @@ export class Game {
         `500 ${Math.round(width * 0.032)}px ` +
         '"Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif';
       this.context.fillText(
-        "4つの文字を完成させました",
+        "4つのことばを圧着しました",
         width / 2,
         height * 0.55,
       );
@@ -975,6 +997,28 @@ function isHeroDirection(control: GameControl): control is HeroDirection {
 
 function pointsEqual(first: GridPoint, second: GridPoint): boolean {
   return first.x === second.x && first.y === second.y;
+}
+
+function getObjectNameFontSize(name: string): number {
+  const length = Array.from(name).length;
+  if (length <= 2) return 0.25;
+  if (length <= 4) return 0.2;
+  return 0.16;
+}
+
+function getLetterFontSize(character: string): number {
+  const length = Array.from(character).length;
+  if (length === 1) return 0.52;
+  if (length <= 4) return 0.25;
+  if (length <= 6) return 0.17;
+  return 0.14;
+}
+
+function getAnswerFontRatio(answer: string): number {
+  const length = Array.from(answer).length;
+  if (length === 1) return 0.27;
+  if (length <= 4) return 0.15;
+  return 0.1;
 }
 
 function easeOutCubic(value: number): number {

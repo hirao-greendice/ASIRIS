@@ -76,9 +76,14 @@ button {
 
 .game-title-row {
   min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 10px;
+}
+
+.game-title-row h1 {
+  grid-column: 1 / -1;
 }
 
 .game-header h1 {
@@ -99,6 +104,22 @@ button {
   letter-spacing: 0.07em;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sword-label {
+  margin: 0;
+  padding: 3px 6px;
+  border: 1px solid rgba(199, 165, 204, 0.52);
+  color: #e9ddec;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.sword-label[data-mode="english"] {
+  border-color: rgba(129, 183, 189, 0.68);
+  color: #bce0e3;
 }
 
 .goal-label {
@@ -244,11 +265,21 @@ button {
 
   .game-title-row {
     display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 2px;
+  }
+
+  .game-title-row h1 {
+    grid-column: 1 / -1;
   }
 
   .stage-label {
     font-size: 9px;
+  }
+
+  .sword-label {
+    padding: 1px 4px;
+    font-size: 8px;
   }
 
   .goal-label {
@@ -256,7 +287,7 @@ button {
   }
 
   .header-reset {
-    min-height: 38px;
+    min-height: 44px;
     padding-inline: 11px;
   }
 
@@ -356,6 +387,7 @@ button {
     left: 0;
     color: #ded5e0;
     background: #332d36;
+    font-size: 13px;
   }
 
   .action-primary {

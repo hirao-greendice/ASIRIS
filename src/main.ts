@@ -78,8 +78,10 @@ async function startGame(
     document.querySelector<HTMLElement>("[data-stage-label]");
   const goalLabel =
     document.querySelector<HTMLElement>("[data-goal-label]");
+  const swordLabel =
+    document.querySelector<HTMLElement>("[data-sword-label]");
 
-  if (!canvas || !stageLabel || !goalLabel) {
+  if (!canvas || !stageLabel || !goalLabel || !swordLabel) {
     throw new Error("Game canvas or HUD was not found.");
   }
 
@@ -95,6 +97,7 @@ async function startGame(
   const game = new Game(canvas, input, stage, assets, {
     stageLabel,
     goalLabel,
+    swordLabel,
   });
   const focusCanvas = (): void => canvas.focus();
   canvas.addEventListener("pointerdown", focusCanvas);
