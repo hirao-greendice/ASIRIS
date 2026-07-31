@@ -1,0 +1,372 @@
+body.editor-mode {
+  min-width: 760px;
+  overflow: auto;
+  overscroll-behavior: auto;
+}
+
+.editor-shell {
+  min-height: 100dvh;
+  color: #ece8df;
+  background: #171615;
+  font-size: 13px;
+}
+
+.editor-shell button,
+.editor-shell input,
+.editor-shell select,
+.editor-shell a {
+  color: inherit;
+  font: inherit;
+}
+
+.editor-shell button,
+.editor-shell select,
+.editor-shell input,
+.editor-shell a {
+  border: 1px solid #4a4743;
+  border-radius: 3px;
+  background: #242220;
+}
+
+.editor-shell button,
+.editor-shell a {
+  min-height: 34px;
+  padding: 7px 10px;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.editor-shell button:hover,
+.editor-shell button:focus-visible,
+.editor-shell a:hover,
+.editor-shell a:focus-visible {
+  border-color: #8f8981;
+}
+
+.editor-shell button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.editor-shell input,
+.editor-shell select {
+  min-width: 0;
+  height: 32px;
+  padding: 5px 7px;
+  user-select: text;
+}
+
+.editor-header {
+  min-height: 68px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 12px 18px;
+  border-bottom: 1px solid #3a3835;
+}
+
+.editor-header h1 {
+  margin: 1px 0 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.editor-kicker {
+  margin: 0;
+  color: #9e9991;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+}
+
+.editor-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.editor-shell .editor-primary-action {
+  border-color: #b99a62;
+  color: #fff4dc;
+}
+
+.editor-workspace {
+  min-height: calc(100dvh - 68px);
+  display: grid;
+  grid-template-columns: 220px minmax(420px, 1fr) 286px;
+}
+
+.editor-panel {
+  min-width: 0;
+  padding: 16px;
+  background: #1d1c1a;
+}
+
+.editor-tools {
+  border-right: 1px solid #3a3835;
+}
+
+.editor-camera-panel {
+  border-left: 1px solid #3a3835;
+}
+
+.editor-panel h2 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+
+.editor-panel h2:not(:first-child) {
+  margin-top: 24px;
+}
+
+.editor-tool-grid,
+.editor-file-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.editor-tool-grid button {
+  text-align: left;
+}
+
+.editor-tool-grid button[data-selected="true"] {
+  border-color: #68c6d1;
+  color: #a9f3f7;
+  background: #263538;
+}
+
+.editor-help {
+  min-height: 50px;
+  margin: 10px 0 0;
+  color: #a9a49c;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.editor-validation {
+  margin-top: 10px;
+  color: #aaa59d;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.editor-validation[data-tone="success"] {
+  color: #a8d7b1;
+}
+
+.editor-validation[data-tone="error"] {
+  color: #e1a39b;
+}
+
+.editor-validation ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.editor-map-column {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 42px minmax(0, 1fr);
+  background: #11100f;
+}
+
+.editor-map-toolbar {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 5px 12px;
+  border-bottom: 1px solid #3a3835;
+  color: #aaa59d;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+}
+
+.editor-map-toolbar label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.editor-map-toolbar select {
+  width: 72px;
+  height: 30px;
+}
+
+.editor-status {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-status[data-tone="error"] {
+  color: #e1a39b;
+}
+
+.editor-canvas-scroll {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  max-height: calc(100dvh - 110px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: #0e0d0c;
+}
+
+#stage-editor-canvas {
+  display: block;
+  max-width: none;
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.editor-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.editor-panel-heading > div {
+  display: flex;
+  gap: 5px;
+}
+
+.editor-panel-heading button {
+  min-height: 30px;
+  padding: 4px 7px;
+  font-size: 11px;
+}
+
+.editor-wide-field {
+  display: grid;
+  gap: 5px;
+  margin-top: 10px;
+  color: #aaa59d;
+  font-size: 11px;
+}
+
+.editor-room-meta {
+  margin: 8px 0 14px;
+  color: #8f8a83;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+}
+
+.editor-camera-panel fieldset {
+  min-width: 0;
+  margin: 12px 0 0;
+  padding: 10px;
+  border: 1px solid #3e3b38;
+}
+
+.editor-camera-panel legend {
+  padding: 0 5px;
+  color: #b6b0a8;
+  font-size: 10px;
+}
+
+.editor-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.editor-field-grid label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: center;
+  color: #99948c;
+  font-size: 10px;
+}
+
+.editor-field-grid input {
+  width: 100%;
+}
+
+.editor-camera-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px 12px;
+  margin: 14px 0 0;
+  color: #97928b;
+  font-size: 10px;
+}
+
+.editor-camera-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.editor-camera-legend i {
+  width: 10px;
+  height: 10px;
+  display: inline-block;
+  border: 2px solid;
+}
+
+.editor-camera-legend .trigger-color {
+  border-color: #62c2cf;
+}
+
+.editor-camera-legend .view-color {
+  border-color: #d9ab5b;
+}
+
+.editor-camera-legend .puzzle-color {
+  border-color: #f0c66c;
+  transform: rotate(45deg);
+}
+
+@media (max-width: 1000px) {
+  body.editor-mode {
+    min-width: 320px;
+  }
+
+  .editor-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .editor-header-actions {
+    width: 100%;
+    overflow-x: auto;
+  }
+
+  .editor-workspace {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .editor-tools,
+  .editor-camera-panel {
+    border: 0;
+    border-bottom: 1px solid #3a3835;
+  }
+
+  .editor-map-column {
+    min-height: 70dvh;
+    order: 2;
+  }
+
+  .editor-camera-panel {
+    order: 1;
+  }
+
+  .editor-tools {
+    order: 0;
+  }
+
+  .editor-canvas-scroll {
+    max-height: 65dvh;
+  }
+}
