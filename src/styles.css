@@ -106,20 +106,33 @@ button {
   white-space: nowrap;
 }
 
-.sword-label {
+.name-label {
+  grid-column: 1 / -1;
   margin: 0;
-  padding: 3px 6px;
+  min-height: 22px;
+  padding: 3px 7px;
+  overflow: hidden;
   border: 1px solid rgba(199, 165, 204, 0.52);
   color: #e9ddec;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.name-label[data-unknown="true"] {
+  border-color: rgba(229, 158, 105, 0.7);
+  color: #f2c8a8;
+}
+
+.turn-label {
+  margin: 0;
+  color: #958d98;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 9px;
   letter-spacing: 0.05em;
   white-space: nowrap;
-}
-
-.sword-label[data-mode="english"] {
-  border-color: rgba(129, 183, 189, 0.68);
-  color: #bce0e3;
 }
 
 .goal-label {
@@ -277,8 +290,13 @@ button {
     font-size: 9px;
   }
 
-  .sword-label {
+  .name-label {
+    min-height: 18px;
     padding: 1px 4px;
+    font-size: 8px;
+  }
+
+  .turn-label {
     font-size: 8px;
   }
 
@@ -387,13 +405,36 @@ button {
     left: 0;
     color: #ded5e0;
     background: #332d36;
-    font-size: 13px;
   }
 
   .action-primary {
     top: 0;
     right: 0;
     background: var(--accent);
+  }
+
+  .action-mark {
+    display: block;
+    font-size: clamp(25px, 7vw, 34px);
+    line-height: 0.85;
+  }
+
+  .action small {
+    display: block;
+    margin-top: 4px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+  }
+
+  .action-en {
+    color: #172024;
+    background: #a9cdd2;
+  }
+
+  .action-en:active,
+  .action-en[data-pressed="true"] {
+    background: #c6e7ea;
   }
 }
 

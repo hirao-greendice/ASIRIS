@@ -15,14 +15,17 @@
       <header class="game-header">
         <div class="game-title-row">
           <h1>ミリしらソード</h1>
-          <p class="stage-label" data-stage-label>STAGE 1 / 4　「MOON」</p>
-          <p class="sword-label" data-sword-label>剣：かな</p>
+          <p class="stage-label" data-stage-label>
+            STAGE 1 / 10　「へびの ならべかた」
+          </p>
+          <p class="turn-label" data-turn-label>TURN 0</p>
+          <p class="name-label" data-sword-label>正面：—</p>
         </div>
         <div class="game-header-tools">
           <p class="keyboard-guide" aria-label="キーボード操作">
             <span>MOVE&nbsp; WASD / ↑↓←→</span>
-            <span>SWORD&nbsp; SPACE</span>
-            <span>MODE&nbsp; E / ENTER</span>
+            <span>JP SLASH&nbsp; J</span>
+            <span>EN SLASH&nbsp; K</span>
             <span>RESET&nbsp; R</span>
           </p>
           <button
@@ -36,7 +39,7 @@
           <a class="editor-link" href="?editor=1" data-editor-link>EDITOR</a>
         </div>
         <p class="goal-label" data-goal-label>
-          英語剣へ切り替え、月の名前を右の壁へ押しつける
+          短い名前なら、届く。長い名前なら、つかえる？
         </p>
       </header>
 
@@ -65,20 +68,22 @@
 
         <div class="action-pad" aria-label="アクションボタン">
           <button
-            class="control-button action action-secondary"
+            class="control-button action action-secondary action-jp"
             type="button"
-            data-control="switch"
-            aria-label="かな剣と英語剣を切り替える"
+            data-control="slash-jp"
+            aria-label="日本語斬り"
           >
-            <span>切替</span>
+            <span class="action-mark">あ</span>
+            <small>JP・J</small>
           </button>
           <button
-            class="control-button action action-primary"
+            class="control-button action action-primary action-en"
             type="button"
-            data-control="primary"
-            aria-label="剣を振る"
+            data-control="slash-en"
+            aria-label="英語斬り"
           >
-            <span>剣</span>
+            <span class="action-mark">A</span>
+            <small>EN・K</small>
           </button>
         </div>
       </section>

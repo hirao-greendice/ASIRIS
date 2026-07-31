@@ -12,8 +12,8 @@ import { BackgroundMusic } from "./game/audio/BackgroundMusic";
 import { Game } from "./game/core/Game";
 import { InputController } from "./game/core/InputController";
 import type { StageDefinition } from "./game/core/stageTypes";
-import { prototypeStage } from "./game/data/prototypeStage";
 import { stage01 } from "./game/data/stage01";
+import { TrialGame } from "./game/trial/TrialGame";
 
 const searchParams = new URLSearchParams(window.location.search);
 const editorMode = searchParams.get("editor") === "1";
@@ -39,17 +39,16 @@ if (editorMode) {
     document.body.classList.remove("editor-mode");
   };
 } else {
-  const stage = getGameStage(playtestMode);
-  cleanup = await startGame(stage, playtestMode);
+  cleanup = playtestMode
+    ? await startEditorPlaytest(getPlaytestStage())
+    : await startTrialGame();
 }
 
 if (import.meta.hot) {
   import.meta.hot.dispose(cleanup);
 }
 
-function getGameStage(isPlaytest: boolean): StageDefinition {
-  if (!isPlaytest) return prototypeStage;
-
+function getPlaytestStage(): StageDefinition {
   const draft = loadStageDraft();
   if (!draft) {
     throw new Error("プレイテスト用のステージ下書きがありません。");
@@ -67,7 +66,6 @@ function getGameStage(isPlaytest: boolean): StageDefinition {
 
 async function startGame(
   stage: StageDefinition,
-  isPlaytest: boolean,
 ): Promise<() => void> {
   const canvas = document.querySelector<HTMLCanvasElement>("#game-canvas");
   const controlButtons =
@@ -85,7 +83,7 @@ async function startGame(
     throw new Error("Game canvas or HUD was not found.");
   }
 
-  if (editorLink && isPlaytest) {
+  if (editorLink) {
     editorLink.textContent = "BACK TO EDITOR";
     editorLink.href = "?editor=1";
   }
@@ -98,6 +96,50 @@ async function startGame(
     stageLabel,
     goalLabel,
     swordLabel,
+  });
+  const focusCanvas = (): void => canvas.focus();
+  canvas.addEventListener("pointerdown", focusCanvas);
+
+  return () => {
+    canvas.removeEventListener("pointerdown", focusCanvas);
+    game.destroy();
+    input.destroy();
+    backgroundMusic.destroy();
+  };
+}
+
+async function startEditorPlaytest(
+  stage: StageDefinition,
+): Promise<() => void> {
+  return startGame(stage);
+}
+
+async function startTrialGame(): Promise<() => void> {
+  const canvas = document.querySelector<HTMLCanvasElement>("#game-canvas");
+  const controlButtons =
+    document.querySelectorAll<HTMLButtonElement>("[data-control]");
+  const stageLabel =
+    document.querySelector<HTMLElement>("[data-stage-label]");
+  const hintLabel =
+    document.querySelector<HTMLElement>("[data-goal-label]");
+  const nameLabel =
+    document.querySelector<HTMLElement>("[data-sword-label]");
+  const turnLabel =
+    document.querySelector<HTMLElement>("[data-turn-label]");
+
+  if (!canvas || !stageLabel || !hintLabel || !nameLabel || !turnLabel) {
+    throw new Error("Trial game canvas or HUD was not found.");
+  }
+
+  const backgroundMusic = new BackgroundMusic(portTownBgmUrl, 0.3);
+  backgroundMusic.start();
+  const input = new InputController(controlButtons);
+  const assets = await loadGameAssets();
+  const game = new TrialGame(canvas, input, assets, {
+    stageLabel,
+    hintLabel,
+    nameLabel,
+    turnLabel,
   });
   const focusCanvas = (): void => canvas.focus();
   canvas.addEventListener("pointerdown", focusCanvas);

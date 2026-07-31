@@ -5,6 +5,8 @@ export type GameControl =
   | "right"
   | "primary"
   | "switch"
+  | "slash-jp"
+  | "slash-en"
   | "reset";
 
 export type DirectionControl = Extract<
@@ -22,6 +24,8 @@ const CONTROLLED_KEYS = new Map<string, GameControl>([
   ["ArrowRight", "right"],
   ["KeyD", "right"],
   ["Space", "primary"],
+  ["KeyJ", "slash-jp"],
+  ["KeyK", "slash-en"],
   ["KeyE", "switch"],
   ["Enter", "switch"],
   ["KeyR", "reset"],
@@ -80,6 +84,13 @@ export class InputController {
    */
   consumeNextPress(): GameControl | undefined {
     return this.pendingPresses.shift();
+  }
+
+  consumePress(control: GameControl): boolean {
+    const index = this.pendingPresses.indexOf(control);
+    if (index < 0) return false;
+    this.pendingPresses.splice(index, 1);
+    return true;
   }
 
   clearPendingPresses(): void {

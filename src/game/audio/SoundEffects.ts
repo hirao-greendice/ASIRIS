@@ -39,6 +39,25 @@ export class SoundEffects {
     this.playTone(240, 0.06, 0.045, "square", -70);
   }
 
+  blocked(): void {
+    this.playTone(105, 0.09, 0.04, "square", -30);
+  }
+
+  danger(): void {
+    this.playSequence([
+      [190, 0],
+      [120, 0.075],
+    ]);
+  }
+
+  reveal(): void {
+    this.playSequence([
+      [430, 0],
+      [640, 0.065],
+      [860, 0.13],
+    ]);
+  }
+
   destroy(): void {
     if (this.context) {
       void this.context.close();

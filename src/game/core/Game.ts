@@ -211,6 +211,16 @@ export class Game {
       return;
     }
 
+    if (control === "slash-jp" || control === "slash-en") {
+      const nextMode = control === "slash-jp" ? "kana" : "english";
+      if (this.world.swordMode !== nextMode) {
+        this.world.toggleSwordMode();
+      }
+      this.attack();
+      this.syncHud();
+      return;
+    }
+
     if (control === "switch") {
       this.world.toggleSwordMode();
       this.soundEffects.changeSword();
