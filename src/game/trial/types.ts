@@ -13,6 +13,7 @@ export type TrialTerrain = "floor" | "wall" | "pit";
 
 export type NamedEntityKind =
   | "tree"
+  | "slime"
   | "snake"
   | "stone"
   | "shield"
@@ -41,12 +42,14 @@ export interface NamedEntityDefinition {
   slashable: boolean;
   isUnknown: boolean;
   behavior: "static" | "chaser";
+  roomId?: string;
 }
 
 export interface SightEnemyDefinition {
   id: string;
   position: GridPoint;
   direction: HeroDirection;
+  roomId?: string;
 }
 
 export interface SwitchDefinition {
@@ -68,11 +71,34 @@ export interface FusionWallDefinition {
   recipe: readonly string[];
   result: string;
   conditionId: string;
+  createsLetter?: boolean;
 }
 
 export interface PitDefinition {
   id: string;
   position: GridPoint;
+}
+
+export interface TrialRoomDefinition {
+  id: string;
+  number: number;
+  title: string;
+  hint: string;
+  bounds: GridRect;
+  playerStart: GridPoint;
+  playerFacing: HeroDirection;
+  exitPosition: GridPoint;
+  cameraAreaId: string;
+  completionConditionId: string;
+  horizontalBlockStopsChaser: boolean;
+  displayTargetEntityId?: string;
+  solutionActions: readonly TrialAction[];
+}
+
+export interface RoomExitDefinition {
+  roomId: string;
+  position: GridPoint;
+  conditionId: string;
 }
 
 export interface TrialStageDefinition {
@@ -87,6 +113,9 @@ export interface TrialStageDefinition {
   playerStart: GridPoint;
   playerFacing: HeroDirection;
   horizontalBlockStopsChaser: boolean;
+  rooms: readonly TrialRoomDefinition[];
+  roomExits: readonly RoomExitDefinition[];
+  corridorCameraSize: number;
   objects: readonly NamedEntityDefinition[];
   sightEnemies: readonly SightEnemyDefinition[];
   switches: readonly SwitchDefinition[];
@@ -122,6 +151,7 @@ export interface TrialRunState {
   activeConditionIds: readonly string[];
   openDoorIds: readonly string[];
   filledPitIds: readonly string[];
+  currentRoomId: string;
   turnCount: number;
   status: TrialStatus;
   failureReason?: "caught" | "sight";
@@ -129,6 +159,7 @@ export interface TrialRunState {
 
 export interface TrialCampaignState {
   stageIndex: number;
+  roomIndex: number;
   run: TrialRunState;
   discoveredUnknownIds: readonly string[];
   isClear: boolean;
@@ -156,6 +187,8 @@ export interface FusionEvent {
     character: string;
     position: GridPoint;
   }[];
+  createdLetterId?: string;
+  resultPosition?: GridPoint;
 }
 
 export interface PitFillEvent {

@@ -8,6 +8,7 @@ import type {
   SightEnemyDefinition,
   SwitchDefinition,
   TrialAction,
+  TrialRoomDefinition,
   TrialStageDefinition,
   TrialTerrain,
 } from "./types";
@@ -34,26 +35,30 @@ interface StageSpec {
     recipe: readonly string[];
     result: string;
     conditionId: string;
+    createsLetter?: boolean;
   };
   doorConditionIds?: readonly string[];
   doorIsGoal?: boolean;
   alwaysShowTargetName?: boolean;
   horizontalBlockStopsChaser?: boolean;
+  entrySide?: "top" | "bottom";
+  exitSide?: "right" | "top" | "bottom";
   solutionActions: readonly TrialAction[];
 }
 
 const ENTITY_CATALOG: Readonly<Record<string, EntityCatalogEntry>> = {
-  T: { kind: "tree", jpName: "木", enName: "TREE" },
-  H: { kind: "snake", jpName: "ヘビ", enName: "SNAKE" },
-  R: { kind: "stone", jpName: "石", enName: "STONE" },
-  Q: { kind: "shield", jpName: "盾", enName: "SHIELD" },
-  C: { kind: "crown", jpName: "王冠", enName: "CROWN" },
-  K: { kind: "knight", jpName: "騎士", enName: "KNIGHT" },
-  Y: { kind: "key", jpName: "鍵", enName: "KEY" },
-  B: { kind: "bat", jpName: "コウモリ", enName: "BAT" },
-  W: { kind: "fence", jpName: "塀", enName: "WALL" },
-  M: { kind: "mimic", jpName: "ミミック", enName: "MIMIC" },
-  F: { kind: "fire", jpName: "火", enName: "FIRE" },
+  T: { kind: "tree", jpName: "き", enName: "TREE" },
+  L: { kind: "slime", jpName: "すらいむ", enName: "SLIME" },
+  H: { kind: "snake", jpName: "へび", enName: "SNAKE" },
+  R: { kind: "stone", jpName: "いし", enName: "STONE" },
+  Q: { kind: "shield", jpName: "たて", enName: "SHIELD" },
+  C: { kind: "crown", jpName: "おうかん", enName: "CROWN" },
+  K: { kind: "knight", jpName: "きし", enName: "KNIGHT" },
+  Y: { kind: "key", jpName: "かぎ", enName: "KEY" },
+  B: { kind: "bat", jpName: "こうもり", enName: "BAT" },
+  W: { kind: "fence", jpName: "へい", enName: "WALL" },
+  M: { kind: "mimic", jpName: "みみっく", enName: "MIMIC" },
+  F: { kind: "fire", jpName: "ひ", enName: "FIRE" },
 };
 
 const SIGHT_DIRECTIONS: Readonly<Record<string, HeroDirection>> = {
@@ -66,8 +71,8 @@ const SIGHT_DIRECTIONS: Readonly<Record<string, HeroDirection>> = {
 const stageSpecs: readonly StageSpec[] = [
   {
     id: "tree-single-letter",
-    title: "木の一字",
-    hint: "まずは一文字。木をスイッチまで押す。",
+    title: "きの一字",
+    hint: "まずは一文字。「き」をスイッチまで押す。",
     width: 7,
     height: 5,
     mapRows: [
@@ -124,6 +129,7 @@ const stageSpecs: readonly StageSpec[] = [
     ],
     playerFacing: "down",
     doorIsGoal: true,
+    exitSide: "bottom",
     solutionActions: [
       "right",
       "slash-jp",
@@ -138,6 +144,48 @@ const stageSpecs: readonly StageSpec[] = [
     ],
   },
   {
+    id: "slime-buddha",
+    title: "いむから仏",
+    hint: "すとらをよけ、いとむを壁へ押しつける。",
+    width: 10,
+    height: 7,
+    mapRows: [
+      "##########",
+      "#........#",
+      "#PL...X..#",
+      "#........#",
+      "#....s.DG#",
+      "#........#",
+      "##########",
+    ],
+    playerFacing: "right",
+    fusion: {
+      inputDirection: "right",
+      recipe: ["い", "む"],
+      result: "仏",
+      conditionId: "fusion-buddha",
+      createsLetter: true,
+    },
+    solutionActions: [
+      "slash-jp",
+      "up",
+      "right",
+      "down",
+      "up",
+      "right",
+      "down",
+      "right",
+      "up",
+      "right",
+      "down",
+      "down",
+      "right",
+      "right",
+      "down",
+      "right",
+    ],
+  },
+  {
     id: "stone-space",
     title: "石の余白",
     hint: "出せることと、動かせることは同じではない。",
@@ -145,21 +193,29 @@ const stageSpecs: readonly StageSpec[] = [
     height: 6,
     mapRows: [
       "##########",
-      "#G.D######",
-      "###.######",
-      "#PR....s##",
-      "##########",
+      "#.......G#",
+      "#.......D#",
+      "#PR...s..#",
+      "#........#",
       "##########",
     ],
     playerFacing: "right",
+    entrySide: "bottom",
+    exitSide: "top",
     solutionActions: [
       "slash-jp",
-      ...repeat("right", 5),
-      ...repeat("left", 3),
+      "down",
+      "right",
+      "right",
       "up",
-      "up",
+      "down",
       "left",
       "left",
+      "up",
+      ...repeat("right", 4),
+      "down",
+      ...repeat("right", 3),
+      ...repeat("up", 3),
     ],
   },
   {
@@ -172,7 +228,7 @@ const stageSpecs: readonly StageSpec[] = [
       "#########",
       "#.....P.#",
       "#>..s.Q.#",
-      "#######D#",
+      "######.D#",
       "#######G#",
       "#########",
     ],
@@ -287,6 +343,7 @@ const stageSpecs: readonly StageSpec[] = [
     ],
     playerFacing: "up",
     chaserSymbols: ["B"],
+    entrySide: "bottom",
     solutionActions: ["left", "up", "slash-en", ...repeat("right", 4)],
   },
   {
@@ -308,6 +365,8 @@ const stageSpecs: readonly StageSpec[] = [
     ],
     playerFacing: "up",
     chaserSymbols: ["K"],
+    entrySide: "bottom",
+    exitSide: "bottom",
     solutionActions: [
       "slash-en",
       "left",
@@ -337,6 +396,8 @@ const stageSpecs: readonly StageSpec[] = [
     playerFacing: "up",
     chaserSymbols: ["M"],
     unknownSymbols: ["M"],
+    entrySide: "bottom",
+    exitSide: "top",
     solutionActions: [
       "slash-en",
       "reset",
@@ -365,9 +426,11 @@ const stageSpecs: readonly StageSpec[] = [
       "#########",
     ],
     playerFacing: "up",
+    entrySide: "bottom",
+    exitSide: "bottom",
     fusion: {
       inputDirection: "up",
-      recipe: ["火", "火"],
+      recipe: ["ひ", "ひ"],
       result: "炎",
       conditionId: "fusion-fire",
     },
@@ -452,16 +515,20 @@ const stageSpecs: readonly StageSpec[] = [
   },
 ];
 
-export const trialStages: readonly TrialStageDefinition[] =
+export const trialRooms: readonly TrialStageDefinition[] =
   stageSpecs.map(createStage);
 
-export const defaultTrialStageIndex = trialStages.length - 1;
+export const trialStages: readonly TrialStageDefinition[] = [
+  createConnectedStage(trialRooms),
+];
+
+export const defaultTrialStageIndex = 0;
 
 export function validateTrialStages(
   stages: readonly TrialStageDefinition[] = trialStages,
 ): void {
-  if (stages.length !== 13) {
-    throw new Error(`Expected 13 selectable stages, received ${stages.length}.`);
+  if (stages.length !== 1) {
+    throw new Error(`Expected one connected world, received ${stages.length}.`);
   }
 
   for (const stage of stages) {
@@ -475,19 +542,31 @@ export function validateTrialStages(
         );
       }
     });
-    if (stage.goals.length === 0) {
+    if (stage.goals.length !== 1) {
       throw new Error(`${stage.id}: goal is missing.`);
     }
-    if (stage.cameraAreas.length !== 1) {
-      throw new Error(`${stage.id}: exactly one camera area is required.`);
+    if (stage.rooms.length !== 14) {
+      throw new Error(
+        `${stage.id}: expected 14 connected rooms, received ${stage.rooms.length}.`,
+      );
+    }
+    if (stage.cameraAreas.length !== stage.rooms.length) {
+      throw new Error(`${stage.id}: every room needs a camera area.`);
     }
   }
 
-  const meeting = stages.find(
-    (stage) => stage.id === "meeting-knight-rampart",
+  const meeting = stages[0].rooms.find(
+    (room) => room.id === "meeting-knight-rampart",
   );
-  if (!meeting || meeting.width !== 15 || meeting.height !== 15) {
+  if (
+    !meeting ||
+    meeting.bounds.width !== 15 ||
+    meeting.bounds.height !== 15
+  ) {
     throw new Error("The 15 by 15 meeting stage is missing.");
+  }
+  if (!stages[0].rooms.some((room) => room.id === "slime-buddha")) {
+    throw new Error("The slime-to-Buddha room is missing.");
   }
 }
 
@@ -630,6 +709,9 @@ function createStage(spec: StageSpec, index: number): TrialStageDefinition {
     playerFacing: spec.playerFacing,
     horizontalBlockStopsChaser:
       spec.horizontalBlockStopsChaser ?? false,
+    rooms: [],
+    roomExits: [],
+    corridorCameraSize: 16,
     objects,
     sightEnemies,
     switches,
@@ -642,6 +724,269 @@ function createStage(spec: StageSpec, index: number): TrialStageDefinition {
     cameraAreas: [createCameraArea(spec.id, width, height)],
     solutionActions: spec.solutionActions,
   };
+}
+
+function createConnectedStage(
+  roomStages: readonly TrialStageDefinition[],
+): TrialStageDefinition {
+  const worldWidth = 23;
+  const spineX = 20;
+  const firstRoomY = 3;
+  const roomGap = 8;
+  let nextRoomY = firstRoomY;
+  const placements = roomStages.map((room, index) => {
+    const placement = {
+      room,
+      spec: stageSpecs[index],
+      x: 2 + Math.floor((15 - room.width) / 2),
+      y: nextRoomY,
+    };
+    nextRoomY += room.height + roomGap;
+    return placement;
+  });
+  const worldHeight = nextRoomY - roomGap + 4;
+  const terrain: TrialTerrain[][] = Array.from(
+    { length: worldHeight },
+    () => Array.from({ length: worldWidth }, () => "wall" as const),
+  );
+  const objects: NamedEntityDefinition[] = [];
+  const sightEnemies: SightEnemyDefinition[] = [];
+  const switches: SwitchDefinition[] = [];
+  const doors: DoorDefinition[] = [];
+  const fusionWalls: FusionWallDefinition[] = [];
+  const pits = [];
+  const rooms: TrialRoomDefinition[] = [];
+  const roomExits = [];
+  const cameraAreas = [];
+
+  for (const placement of placements) {
+    const { room, spec, x: offsetX, y: offsetY } = placement;
+    for (let y = 0; y < room.height; y += 1) {
+      for (let x = 0; x < room.width; x += 1) {
+        terrain[offsetY + y][offsetX + x] = room.terrain[y][x];
+      }
+    }
+
+    const translate = (point: GridPoint): GridPoint => ({
+      x: point.x + offsetX,
+      y: point.y + offsetY,
+    });
+    objects.push(
+      ...room.objects.map((entry) => ({
+        ...entry,
+        position: translate(entry.position),
+        roomId: room.id,
+      })),
+    );
+    sightEnemies.push(
+      ...room.sightEnemies.map((entry) => ({
+        ...entry,
+        position: translate(entry.position),
+        roomId: room.id,
+      })),
+    );
+    switches.push(
+      ...room.switches.map((entry) => ({
+        ...entry,
+        position: translate(entry.position),
+      })),
+    );
+    doors.push(
+      ...room.doors.map((entry) => ({
+        ...entry,
+        position: translate(entry.position),
+      })),
+    );
+    fusionWalls.push(
+      ...room.fusionWalls.map((entry) => ({
+        ...entry,
+        position: translate(entry.position),
+      })),
+    );
+    pits.push(
+      ...room.pits.map((entry) => ({
+        ...entry,
+        position: translate(entry.position),
+      })),
+    );
+
+    const bounds = {
+      x: offsetX,
+      y: offsetY,
+      width: room.width,
+      height: room.height,
+    };
+    const cameraAreaId = `${room.id}-world-camera`;
+    const viewSize = Math.max(room.width, room.height) + 1;
+    const sourceTargetId = room.displayTargetEntityId;
+    rooms.push({
+      id: room.id,
+      number: room.number,
+      title: room.title,
+      hint: room.hint,
+      bounds,
+      playerStart: translate(room.playerStart),
+      playerFacing: room.playerFacing,
+      exitPosition: translate(room.goals[0]),
+      cameraAreaId,
+      completionConditionId: `room-complete-${room.id}`,
+      horizontalBlockStopsChaser: room.horizontalBlockStopsChaser,
+      displayTargetEntityId: sourceTargetId,
+      solutionActions: room.solutionActions,
+    });
+    cameraAreas.push({
+      id: cameraAreaId,
+      trigger: bounds,
+      view: {
+        x: offsetX + (room.width - viewSize) / 2,
+        y: offsetY + (room.height - viewSize) / 2,
+        width: viewSize,
+        height: viewSize,
+      },
+      transitionMs: 180,
+    });
+
+    if (spec.fusion?.createsLetter) {
+      for (const wall of fusionWalls.filter((entry) =>
+        entry.id.startsWith(`${room.id}-fusion-wall-`)
+      )) {
+        wall.createsLetter = true;
+      }
+    }
+  }
+
+  const connectionYValues: number[] = [];
+  for (let index = 0; index < rooms.length - 1; index += 1) {
+    const room = rooms[index];
+    const spec = stageSpecs[index];
+    const exitSide = spec.exitSide ?? "right";
+    const exitOutside = outsidePoint(
+      room.exitPosition,
+      room.bounds,
+      exitSide,
+    );
+    carveLine(terrain, room.exitPosition, exitOutside);
+    carveLine(terrain, exitOutside, {
+      x: spineX,
+      y: exitOutside.y,
+    });
+    connectionYValues.push(exitOutside.y);
+    roomExits.push({
+      roomId: room.id,
+      position: { ...room.exitPosition },
+      conditionId: room.completionConditionId,
+    });
+
+    const nextRoom = rooms[index + 1];
+    const nextSpec = stageSpecs[index + 1];
+    const entrySide = nextSpec.entrySide ?? "top";
+    const entryOutsideY =
+      entrySide === "top"
+        ? nextRoom.bounds.y - 2
+        : nextRoom.bounds.y + nextRoom.bounds.height + 1;
+    const entryOutside = {
+      x: nextRoom.playerStart.x,
+      y: entryOutsideY,
+    };
+    carveLine(terrain, { x: spineX, y: entryOutsideY }, entryOutside);
+    carveLine(terrain, entryOutside, nextRoom.playerStart);
+    connectionYValues.push(entryOutsideY);
+
+    const gatePosition = {
+      x: nextRoom.playerStart.x,
+      y:
+        nextRoom.playerStart.y +
+        (entrySide === "top" ? -1 : 1),
+    };
+    terrain[gatePosition.y][gatePosition.x] = "floor";
+    doors.push({
+      id: `connector-door-${room.id}-to-${nextRoom.id}`,
+      position: gatePosition,
+      requiredSwitchIds: [],
+      requiredConditionIds: [room.completionConditionId],
+    });
+  }
+
+  if (connectionYValues.length > 0) {
+    const minimumY = Math.min(...connectionYValues);
+    const maximumY = Math.max(...connectionYValues);
+    carveLine(
+      terrain,
+      { x: spineX, y: minimumY },
+      { x: spineX, y: maximumY },
+    );
+  }
+
+  const finalRoom = rooms[rooms.length - 1];
+  const mapRows = terrain.map((row) =>
+    row.map((tile) => (tile === "wall" ? "#" : ".")).join("")
+  );
+
+  return {
+    id: "connected-mirishira-world",
+    number: 1,
+    title: "つながるミリしら街道",
+    hint: rooms[0].hint,
+    width: worldWidth,
+    height: worldHeight,
+    mapRows,
+    terrain,
+    playerStart: { ...rooms[0].playerStart },
+    playerFacing: roomStages[0].playerFacing,
+    horizontalBlockStopsChaser: false,
+    rooms,
+    roomExits,
+    corridorCameraSize: 16,
+    objects,
+    sightEnemies,
+    switches,
+    doors,
+    goals: [{ ...finalRoom.exitPosition }],
+    fusionWalls,
+    pits,
+    cameraAreas,
+    solutionActions: [],
+  };
+}
+
+function outsidePoint(
+  position: GridPoint,
+  bounds: GridRect,
+  side: "right" | "top" | "bottom",
+): GridPoint {
+  if (side === "top") {
+    return { x: position.x, y: bounds.y - 2 };
+  }
+  if (side === "bottom") {
+    return {
+      x: position.x,
+      y: bounds.y + bounds.height + 1,
+    };
+  }
+  return { x: 20, y: position.y };
+}
+
+function carveLine(
+  terrain: TrialTerrain[][],
+  from: GridPoint,
+  to: GridPoint,
+): void {
+  let point = { ...from };
+  terrain[point.y][point.x] = "floor";
+  while (point.x !== to.x) {
+    point = {
+      x: point.x + Math.sign(to.x - point.x),
+      y: point.y,
+    };
+    terrain[point.y][point.x] = "floor";
+  }
+  while (point.y !== to.y) {
+    point = {
+      x: point.x,
+      y: point.y + Math.sign(to.y - point.y),
+    };
+    terrain[point.y][point.x] = "floor";
+  }
 }
 
 function createCameraArea(

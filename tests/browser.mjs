@@ -52,6 +52,24 @@ const exitActions = [
 ];
 const solution = [...setupActions, "slash-en", ...exitActions];
 const japaneseAttempt = [...setupActions, "slash-jp", ...exitActions];
+const slimeSolution = [
+  "slash-jp",
+  "up",
+  "right",
+  "down",
+  "up",
+  "right",
+  "down",
+  "right",
+  "up",
+  "right",
+  "down",
+  "down",
+  "right",
+  "right",
+  "down",
+  "right",
+];
 
 const keyboardKeys = {
   up: "ArrowUp",
@@ -93,13 +111,28 @@ try {
       .querySelector("#game-canvas")
       ?.getBoundingClientRect().toJSON(),
   }));
-  assert.match(desktopHud.stage, /STAGE 13 \/ 13/);
-  assert.match(desktopHud.target, /対象：騎士 \/ KNIGHT/);
+  assert.match(desktopHud.stage, /ROOM 1 \/ 14/);
+  assert.match(desktopHud.target, /対象：—/);
   assert.equal(desktopHud.turn, "TURN 0");
-  assert.equal(desktopHud.selectedStage, "12");
-  assert.equal(desktopHud.stageOptions, 13);
+  assert.equal(desktopHud.selectedStage, "0");
+  assert.equal(desktopHud.stageOptions, 14);
   assert.ok(desktopHud.canvas.width >= 700);
   assert.equal(desktopHud.canvas.width, desktopHud.canvas.height);
+  await desktop.screenshot({
+    path: join(outputDirectory, "desktop-tree-illustration.png"),
+    fullPage: true,
+  });
+
+  let state;
+  await desktop.locator("[data-stage-select]").selectOption("13");
+  await desktop.waitForTimeout(100);
+  state = await snapshot(desktop);
+  assert.equal(state.stage, 14);
+  assert.equal(state.stageId, "meeting-knight-rampart");
+  assert.match(
+    await desktop.locator("[data-sword-label]").textContent(),
+    /対象：きし \/ KNIGHT/,
+  );
 
   for (let index = 0; index < solution.length; index += 1) {
     await desktop.keyboard.press(keyboardKeys[solution[index]]);
@@ -110,7 +143,7 @@ try {
         cut.letters,
         "K@7,8|N@7,9|I@7,10|G@7,11|H@7,12|T@7,13",
       );
-      assert.equal(cut.doors, "open");
+      assert.equal(cut.doors.split("|")[0], "open");
       assert.equal(cut.turn, 9);
     }
   }
@@ -119,7 +152,7 @@ try {
     undefined,
     { timeout: 2500 },
   );
-  let state = await snapshot(desktop);
+  state = await snapshot(desktop);
   assert.equal(state.clear, true);
   assert.equal(state.turn, 16);
   await desktop.screenshot({
@@ -133,7 +166,7 @@ try {
   assert.equal(state.player, "4,6");
   assert.equal(state.turn, 0);
   assert.equal(state.letters, "");
-  assert.equal(state.doors, "closed");
+  assert.equal(state.doors.split("|")[0], "closed");
   assert.equal(state.clear, false);
 
   await performKeyboardActions(desktop, japaneseAttempt);
@@ -149,17 +182,27 @@ try {
   await desktop.waitForTimeout(100);
   assert.equal((await snapshot(desktop)).status, "playing");
 
-  await desktop.locator("[data-stage-select]").selectOption("2");
+  await desktop.locator("[data-stage-select]").selectOption("3");
   await desktop.waitForTimeout(100);
   state = await snapshot(desktop);
-  assert.equal(state.stage, 3);
-  assert.equal(state.stageId, "snake-two-jobs");
+  assert.equal(state.stage, 4);
+  assert.equal(state.stageId, "slime-buddha");
   assert.equal(state.player, "1,2");
   assert.equal(state.turn, 0);
-  await desktop.keyboard.press("ArrowRight");
-  await desktop.waitForTimeout(80);
-  assert.equal((await snapshot(desktop)).turn, 1);
-  await desktop.locator("[data-stage-select]").selectOption("12");
+  await desktop.screenshot({
+    path: join(outputDirectory, "desktop-slime-illustration.png"),
+    fullPage: true,
+  });
+  await performKeyboardActions(desktop, slimeSolution);
+  state = await snapshot(desktop);
+  assert.equal(state.turn, slimeSolution.length);
+  assert.equal(state.letters, "す@2,3|ら@3,3|仏@5,4");
+  assert.equal(state.doors.split("|")[0], "open");
+  await desktop.screenshot({
+    path: join(outputDirectory, "desktop-slime-buddha.png"),
+    fullPage: true,
+  });
+  await desktop.locator("[data-stage-select]").selectOption("13");
   await desktop.waitForTimeout(100);
   state = await snapshot(desktop);
   assert.equal(state.stageId, "meeting-knight-rampart");
@@ -191,6 +234,9 @@ try {
   assert.ok(mobileLayout.canvas.width <= 390);
   assert.equal(mobileLayout.canvas.width, mobileLayout.canvas.height);
 
+  await mobile.locator("[data-stage-select]").selectOption("13");
+  await mobile.waitForTimeout(100);
+
   for (let index = 0; index < solution.length; index += 1) {
     await mobile
       .locator(`[data-control="${solution[index]}"]`)
@@ -202,7 +248,7 @@ try {
         cut.letters,
         "K@7,8|N@7,9|I@7,10|G@7,11|H@7,12|T@7,13",
       );
-      assert.equal(cut.doors, "open");
+      assert.equal(cut.doors.split("|")[0], "open");
     }
   }
   await mobile.waitForFunction(
@@ -225,7 +271,7 @@ try {
   await mobile.locator("[data-stage-select]").selectOption("0");
   await mobile.waitForTimeout(100);
   assert.equal((await snapshot(mobile)).stageId, "tree-single-letter");
-  await mobile.locator("[data-stage-select]").selectOption("12");
+  await mobile.locator("[data-stage-select]").selectOption("13");
   await mobile.waitForTimeout(100);
   assert.equal(
     (await snapshot(mobile)).stageId,

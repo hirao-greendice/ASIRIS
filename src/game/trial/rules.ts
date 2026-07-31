@@ -13,6 +13,7 @@ import type {
   TrialActionResult,
   TrialCampaignState,
   TrialLetterState,
+  TrialRoomDefinition,
   TrialRunState,
   TrialStageDefinition,
 } from "./types";
@@ -36,12 +37,17 @@ export function splitGraphemes(value: string): string[] {
 
 export function createTrialCampaignState(
   discoveredUnknownIds: readonly string[] = [],
-  stageIndex = defaultTrialStageIndex,
+  roomIndex = defaultTrialStageIndex,
 ): TrialCampaignState {
-  const safeIndex = Math.max(0, Math.min(stageIndex, trialStages.length - 1));
+  const stage = trialStages[0];
+  const safeRoomIndex = Math.max(
+    0,
+    Math.min(roomIndex, stage.rooms.length - 1),
+  );
   return {
-    stageIndex: safeIndex,
-    run: createRunState(trialStages[safeIndex]),
+    stageIndex: 0,
+    roomIndex: safeRoomIndex,
+    run: createRunState(stage, safeRoomIndex),
     discoveredUnknownIds: [...new Set(discoveredUnknownIds)],
     isClear: false,
   };
@@ -53,30 +59,22 @@ export function resetTrialStage(
   if (state.isClear) {
     return createTrialCampaignState(
       state.discoveredUnknownIds,
-      state.stageIndex,
+      state.roomIndex,
     );
   }
-  return {
-    ...state,
-    run: createRunState(getActiveTrialStage(state)),
-  };
+  return createTrialCampaignState(
+    state.discoveredUnknownIds,
+    state.roomIndex,
+  );
 }
 
 export function advanceTrialStage(
   state: TrialCampaignState,
 ): TrialCampaignState {
   if (state.run.status !== "completed") return state;
-  const nextIndex = state.stageIndex + 1;
-  if (nextIndex >= trialStages.length) {
-    return {
-      ...state,
-      isClear: true,
-    };
-  }
   return {
     ...state,
-    stageIndex: nextIndex,
-    run: createRunState(trialStages[nextIndex]),
+    isClear: true,
   };
 }
 
@@ -142,6 +140,17 @@ export function resolveTrialAction(
       pendingConditionId,
     ];
   }
+  for (const roomExit of stage.roomExits) {
+    if (
+      pointsEqual(roomExit.position, run.player) &&
+      !run.activeConditionIds.includes(roomExit.conditionId)
+    ) {
+      run.activeConditionIds = [
+        ...run.activeConditionIds,
+        roomExit.conditionId,
+      ];
+    }
+  }
   run.openDoorIds = computeOpenDoorIds(stage, run);
 
   moveChasers(stage, run);
@@ -164,6 +173,16 @@ export function resolveTrialAction(
     run.status = "completed";
   }
 
+  const enteredRoomIndex = stage.rooms.findIndex(
+    (room) =>
+      room.id !== run.currentRoomId &&
+      pointsEqual(room.playerStart, run.player),
+  );
+  if (enteredRoomIndex >= 0) {
+    run.currentRoomId = stage.rooms[enteredRoomIndex].id;
+    state.roomIndex = enteredRoomIndex;
+  }
+
   return {
     state,
     consumedTurn,
@@ -183,6 +202,17 @@ export function getActiveTrialStage(
   const stage = trialStages[state.stageIndex];
   if (!stage) throw new Error(`Trial stage ${state.stageIndex} is missing.`);
   return stage;
+}
+
+export function getActiveTrialRoom(
+  state: TrialCampaignState,
+): TrialRoomDefinition {
+  const stage = getActiveTrialStage(state);
+  return (
+    stage.rooms.find((room) => room.id === state.run.currentRoomId) ??
+    stage.rooms[state.roomIndex] ??
+    stage.rooms[0]
+  );
 }
 
 export function getEntityDefinition(
@@ -247,6 +277,12 @@ export function getChaserNextMove(
   if (!entity) return undefined;
   const definition = getEntityDefinition(stage, entityId);
   if (definition.behavior !== "chaser") return undefined;
+  if (
+    definition.roomId !== state.run.currentRoomId ||
+    !isPlayerInsideCurrentRoom(stage, state.run)
+  ) {
+    return undefined;
+  }
   return chooseChaserMove(stage, state.run, entity);
 }
 
@@ -268,22 +304,32 @@ export function isDoorOpen(
   return run.openDoorIds.includes(door.id);
 }
 
-function createRunState(stage: TrialStageDefinition): TrialRunState {
-  return {
-    player: { ...stage.playerStart },
-    facing: stage.playerFacing,
+function createRunState(
+  stage: TrialStageDefinition,
+  roomIndex: number,
+): TrialRunState {
+  const room = stage.rooms[roomIndex];
+  const activeConditionIds = stage.rooms
+    .slice(0, roomIndex)
+    .map((entry) => entry.completionConditionId);
+  const run: TrialRunState = {
+    player: { ...room.playerStart },
+    facing: room.playerFacing,
     objects: stage.objects.map((definition) => ({
       id: definition.id,
       position: { ...definition.position },
       isAlive: true,
     })),
     letters: [],
-    activeConditionIds: [],
+    activeConditionIds,
     openDoorIds: [],
     filledPitIds: [],
+    currentRoomId: room.id,
     turnCount: 0,
     status: "playing",
   };
+  run.openDoorIds = computeOpenDoorIds(stage, run);
+  return run;
 }
 
 function cloneCampaignState(
@@ -291,6 +337,7 @@ function cloneCampaignState(
 ): TrialCampaignState {
   return {
     stageIndex: state.stageIndex,
+    roomIndex: state.roomIndex,
     isClear: state.isClear,
     discoveredUnknownIds: [...state.discoveredUnknownIds],
     run: {
@@ -354,6 +401,22 @@ function resolveMove(
 
     const consumedIds = new Set(chain.map((entry) => entry.id));
     run.letters = run.letters.filter((entry) => !consumedIds.has(entry.id));
+    let createdLetterId: string | undefined;
+    let resultPosition: GridPoint | undefined;
+    if (wall.createsLetter) {
+      createdLetterId =
+        `${wall.id}-result-${run.turnCount + 1}-${wall.result}`;
+      resultPosition = { ...chain[chain.length - 1].position };
+      run.letters = [
+        ...run.letters,
+        {
+          id: createdLetterId,
+          sourceEntityId: chain[0].sourceEntityId,
+          character: wall.result,
+          position: resultPosition,
+        },
+      ];
+    }
     run.player = destination;
     return {
       consumedTurn: true,
@@ -362,6 +425,8 @@ function resolveMove(
       fusion: {
         wallId: wall.id,
         result: wall.result,
+        createdLetterId,
+        resultPosition,
         consumedLetters: chain.map((entry) => ({
           character: entry.character,
           position: { ...entry.position },
@@ -499,6 +564,12 @@ function moveChasers(
     if (!entity.isAlive) continue;
     const definition = getEntityDefinition(stage, entity.id);
     if (definition.behavior !== "chaser") continue;
+    if (
+      definition.roomId !== run.currentRoomId ||
+      !isPlayerInsideCurrentRoom(stage, run)
+    ) {
+      continue;
+    }
     const destination = chooseChaserMove(stage, run, entity);
     if (destination) entity.position = destination;
   }
@@ -518,7 +589,10 @@ function chooseChaserMove(
     if (isChaserDestinationFree(stage, run, horizontal, entity.id)) {
       return horizontal;
     }
-    if (stage.horizontalBlockStopsChaser) return undefined;
+    const room = stage.rooms.find(
+      (entry) => entry.id === entityRoomId(stage, entity.id),
+    );
+    if (room?.horizontalBlockStopsChaser) return undefined;
   }
 
   const verticalDifference = run.player.y - entity.position.y;
@@ -532,6 +606,37 @@ function chooseChaserMove(
     }
   }
   return undefined;
+}
+
+function entityRoomId(
+  stage: TrialStageDefinition,
+  entityId: string,
+): string | undefined {
+  return getEntityDefinition(stage, entityId).roomId;
+}
+
+function isPlayerInsideCurrentRoom(
+  stage: TrialStageDefinition,
+  run: TrialRunState,
+): boolean {
+  const room = stage.rooms.find(
+    (entry) => entry.id === run.currentRoomId,
+  );
+  return room !== undefined && pointInsideRect(run.player, room.bounds);
+}
+
+function pointInsideRect(point: GridPoint, rect: {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}): boolean {
+  return (
+    point.x >= rect.x &&
+    point.y >= rect.y &&
+    point.x < rect.x + rect.width &&
+    point.y < rect.y + rect.height
+  );
 }
 
 function isChaserDestinationFree(

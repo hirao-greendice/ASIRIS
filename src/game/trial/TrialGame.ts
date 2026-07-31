@@ -12,6 +12,7 @@ import type { GridPoint, GridRect } from "../core/stageTypes";
 import {
   advanceTrialStage,
   createTrialCampaignState,
+  getActiveTrialRoom,
   getActiveTrialStage,
   getChaserNextMove,
   getDangerTileKeys,
@@ -22,7 +23,6 @@ import {
   resetTrialStage,
   resolveTrialAction,
 } from "./rules";
-import { trialStages } from "./stages";
 import type {
   FusionEvent,
   NamedEntityDefinition,
@@ -324,6 +324,9 @@ export class TrialGame {
     result: TrialActionResult,
   ): void {
     const next = result.state;
+    if (previous.run.currentRoomId !== next.run.currentRoomId) {
+      this.stageBannerRemaining = STAGE_BANNER_SECONDS;
+    }
     if (
       result.movedPlayer &&
       !pointsEqual(previous.run.player, next.run.player)
@@ -444,12 +447,13 @@ export class TrialGame {
   }
 
   private populateStageSelect(): void {
-    const options = trialStages.map((stage, index) => {
+    const stage = getActiveTrialStage(this.state);
+    const options = stage.rooms.map((room, index) => {
       const option = document.createElement("option");
       option.value = String(index);
       option.textContent =
-        `${String(stage.number).padStart(2, "0")}　${stage.title}` +
-        `　[${stage.width}×${stage.height}]`;
+        `${String(room.number).padStart(2, "0")}　${room.title}` +
+        `　[${room.bounds.width}×${room.bounds.height}]`;
       return option;
     });
     this.hud.stageSelect.replaceChildren(...options);
@@ -457,12 +461,13 @@ export class TrialGame {
 
   private handleStageSelection = (): void => {
     const stageIndex = Number.parseInt(this.hud.stageSelect.value, 10);
+    const roomCount = getActiveTrialStage(this.state).rooms.length;
     if (
       !Number.isInteger(stageIndex) ||
       stageIndex < 0 ||
-      stageIndex >= trialStages.length
+      stageIndex >= roomCount
     ) {
-      this.hud.stageSelect.value = String(this.state.stageIndex);
+      this.hud.stageSelect.value = String(this.state.roomIndex);
       return;
     }
 
@@ -501,15 +506,16 @@ export class TrialGame {
 
   private syncHud(): void {
     const stage = getActiveTrialStage(this.state);
+    const room = getActiveTrialRoom(this.state);
     this.hud.stageLabel.textContent =
-      `STAGE ${stage.number} / ${trialStages.length}`;
-    this.hud.stageSelect.value = String(this.state.stageIndex);
-    this.hud.hintLabel.textContent = stage.hint;
+      `ROOM ${room.number} / ${stage.rooms.length}`;
+    this.hud.stageSelect.value = String(this.state.roomIndex);
+    this.hud.hintLabel.textContent = room.hint;
     this.hud.turnLabel.textContent = `TURN ${this.state.run.turnCount}`;
 
-    const persistentTarget = stage.displayTargetEntityId
+    const persistentTarget = room.displayTargetEntityId
       ? stage.objects.find(
-          (entry) => entry.id === stage.displayTargetEntityId,
+          (entry) => entry.id === room.displayTargetEntityId,
         )
       : undefined;
     if (persistentTarget) {
@@ -543,7 +549,7 @@ export class TrialGame {
     context.fillRect(0, 0, size, size);
 
     const stage = getActiveTrialStage(this.state);
-    const camera = stage.cameraAreas[0].view;
+    const camera = this.getCameraView(stage);
     const tileSize = size / camera.width;
     this.drawTerrain(stage, camera, tileSize);
     this.drawDanger(stage, camera, tileSize);
@@ -558,6 +564,33 @@ export class TrialGame {
     this.drawPlayer(camera, tileSize);
     this.drawEffects(camera, tileSize);
     this.drawOverlay(size);
+  }
+
+  private getCameraView(stage: TrialStageDefinition): GridRect {
+    const area = stage.cameraAreas.find((entry) =>
+      pointInsideRect(this.state.run.player, entry.trigger)
+    );
+    if (area) return area.view;
+
+    const size = Math.min(
+      stage.corridorCameraSize,
+      stage.width,
+      stage.height,
+    );
+    return {
+      x: clamp(
+        this.state.run.player.x + 0.5 - size / 2,
+        0,
+        stage.width - size,
+      ),
+      y: clamp(
+        this.state.run.player.y + 0.5 - size / 2,
+        0,
+        stage.height - size,
+      ),
+      width: size,
+      height: size,
+    };
   }
 
   private drawTerrain(
@@ -797,7 +830,11 @@ export class TrialGame {
         tileSize * 0.86,
       );
       this.drawCenteredText(
-        active ? wall.result : "火+火",
+        active
+          ? wall.createsLetter
+            ? "合"
+            : wall.result
+          : wall.recipe.join("+"),
         rect,
         active ? "#ffd5c5" : "#e8dbea",
         active ? 0.58 : 0.23,
@@ -822,55 +859,16 @@ export class TrialGame {
   private drawObject(
     definition: NamedEntityDefinition,
     rect: { x: number; y: number; size: number },
-    tileSize: number,
+    _tileSize: number,
   ): void {
-    const context = this.context;
-    const discovered =
-      !definition.isUnknown ||
-      this.state.discoveredUnknownIds.includes(definition.id);
     const chaser = definition.behavior === "chaser";
     const colors = objectColors(definition.kind);
-
-    context.save();
-    context.fillStyle = colors.fill;
-    context.strokeStyle = chaser ? "#f0a36e" : colors.stroke;
-    context.lineWidth = Math.max(1.5, tileSize * (chaser ? 0.065 : 0.04));
-    context.beginPath();
-    context.roundRect(
-      rect.x + tileSize * 0.13,
-      rect.y + tileSize * 0.12,
-      tileSize * 0.74,
-      tileSize * 0.68,
-      tileSize * 0.16,
-    );
-    context.fill();
-    context.stroke();
-    context.restore();
-
-    this.drawCenteredText(
-      discovered ? definition.symbol : "?",
-      {
-        x: rect.x,
-        y: rect.y - tileSize * 0.09,
-        size: rect.size,
-      },
-      colors.text,
-      0.38,
-      800,
-    );
-
-    const label = discovered ? definition.jpName : "???";
-    context.fillStyle = "#f5edf6";
-    context.font =
-      `700 ${Math.max(7, tileSize * (label.length > 3 ? 0.14 : 0.17))}px ` +
-      '"Yu Gothic", Meiryo, sans-serif';
-    context.textAlign = "center";
-    context.textBaseline = "middle";
-    context.fillText(
-      label,
-      rect.x + tileSize / 2,
-      rect.y + tileSize * 0.79,
-      tileSize * 0.92,
+    drawObjectIllustration(
+      this.context,
+      definition.kind,
+      rect,
+      colors,
+      chaser,
     );
   }
 
@@ -1068,7 +1066,7 @@ export class TrialGame {
   private drawOverlay(size: number): void {
     const context = this.context;
     if (this.stageBannerRemaining > 0 && !this.state.isClear) {
-      const stage = getActiveTrialStage(this.state);
+      const room = getActiveTrialRoom(this.state);
       const alpha = clamp(this.stageBannerRemaining * 2.1, 0, 1);
       context.fillStyle = `rgba(11, 8, 13, ${0.76 * alpha})`;
       context.fillRect(0, size * 0.41, size, size * 0.18);
@@ -1079,7 +1077,7 @@ export class TrialGame {
         `800 ${Math.max(14, size * 0.045)}px ` +
         '"Yu Gothic", Meiryo, sans-serif';
       context.fillText(
-        `${stage.number}. ${stage.title}`,
+        `${room.number}. ${room.title}`,
         size / 2,
         size / 2,
         size * 0.84,
@@ -1232,6 +1230,7 @@ export class TrialGame {
     stageId: string;
     status: string;
     player: string;
+    worldPlayer: string;
     facing: HeroDirection;
     turn: number;
     letters: string;
@@ -1242,23 +1241,36 @@ export class TrialGame {
     clear: boolean;
   } {
     const stage = getActiveTrialStage(this.state);
+    const room = getActiveTrialRoom(this.state);
+    const toLocal = (point: GridPoint): GridPoint => ({
+      x: point.x - room.bounds.x,
+      y: point.y - room.bounds.y,
+    });
+    const localPlayer = toLocal(this.state.run.player);
     return {
-      stage: stage.number,
-      stageId: stage.id,
+      stage: room.number,
+      stageId: room.id,
       status: this.state.run.status,
-      player: `${this.state.run.player.x},${this.state.run.player.y}`,
+      player: `${localPlayer.x},${localPlayer.y}`,
+      worldPlayer:
+        `${this.state.run.player.x},${this.state.run.player.y}`,
       facing: this.state.run.facing,
       turn: this.state.run.turnCount,
       letters: this.state.run.letters
+        .filter((entry) => pointInsideRect(entry.position, room.bounds))
         .map(
-          (entry) =>
-            `${entry.character}@${entry.position.x},${entry.position.y}`,
+          (entry) => {
+            const local = toLocal(entry.position);
+            return `${entry.character}@${local.x},${local.y}`;
+          },
         )
         .join("|"),
       doors: stage.doors
+        .filter((door) => pointInsideRect(door.position, room.bounds))
         .map((door) => (isDoorOpen(this.state.run, stage, door) ? "open" : "closed"))
         .join("|"),
       pits: stage.pits
+        .filter((pit) => pointInsideRect(pit.position, room.bounds))
         .map((pit) =>
           this.state.run.filledPitIds.includes(pit.id) ? "filled" : "open"
         )
@@ -1299,6 +1311,8 @@ function objectColors(kind: NamedEntityDefinition["kind"]): {
   switch (kind) {
     case "tree":
       return { fill: "#36503a", stroke: "#82ad87", text: "#e1f2e3" };
+    case "slime":
+      return { fill: "#443255", stroke: "#c7a5cc", text: "#f3e4f6" };
     case "fire":
       return { fill: "#74392f", stroke: "#de846b", text: "#ffd7c8" };
     case "bat":
@@ -1316,6 +1330,381 @@ function objectColors(kind: NamedEntityDefinition["kind"]): {
     case "fence":
       return { fill: "#46434a", stroke: "#a5a0aa", text: "#f0edf2" };
   }
+}
+
+function drawObjectIllustration(
+  context: CanvasRenderingContext2D,
+  kind: NamedEntityDefinition["kind"],
+  rect: { x: number; y: number; size: number },
+  colors: { fill: string; stroke: string; text: string },
+  chaser: boolean,
+): void {
+  context.save();
+  context.translate(rect.x, rect.y);
+  context.scale(rect.size, rect.size);
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  context.fillStyle = "rgba(0, 0, 0, 0.3)";
+  context.beginPath();
+  context.ellipse(0.5, 0.82, 0.32, 0.085, 0, 0, Math.PI * 2);
+  context.fill();
+
+  if (chaser) {
+    context.strokeStyle = "rgba(240, 163, 110, 0.8)";
+    context.lineWidth = 0.045;
+    context.beginPath();
+    context.ellipse(0.5, 0.52, 0.39, 0.4, 0, 0, Math.PI * 2);
+    context.stroke();
+  }
+
+  context.fillStyle = colors.fill;
+  context.strokeStyle = chaser ? "#f0a36e" : colors.stroke;
+  context.lineWidth = 0.035;
+
+  switch (kind) {
+    case "tree":
+      drawTreeIllustration(context);
+      break;
+    case "slime":
+      drawSlimeIllustration(context);
+      break;
+    case "snake":
+      drawSnakeIllustration(context);
+      break;
+    case "stone":
+      drawStoneIllustration(context);
+      break;
+    case "shield":
+      drawShieldIllustration(context);
+      break;
+    case "crown":
+      drawCrownIllustration(context);
+      break;
+    case "knight":
+      drawKnightIllustration(context, chaser);
+      break;
+    case "key":
+      drawKeyIllustration(context);
+      break;
+    case "bat":
+      drawBatIllustration(context);
+      break;
+    case "fence":
+      drawFenceIllustration(context);
+      break;
+    case "mimic":
+      drawMimicIllustration(context);
+      break;
+    case "fire":
+      drawFireIllustration(context);
+      break;
+  }
+  context.restore();
+}
+
+function drawTreeIllustration(context: CanvasRenderingContext2D): void {
+  context.fillStyle = "#765238";
+  context.strokeStyle = "#b0835f";
+  context.beginPath();
+  context.roundRect(0.43, 0.48, 0.14, 0.35, 0.035);
+  context.fill();
+  context.stroke();
+
+  context.fillStyle = "#365f3e";
+  context.strokeStyle = "#82ad87";
+  for (const [x, y, radius] of [
+    [0.34, 0.43, 0.2],
+    [0.55, 0.34, 0.23],
+    [0.67, 0.48, 0.19],
+  ] as const) {
+    context.beginPath();
+    context.arc(x, y, radius, 0, Math.PI * 2);
+    context.fill();
+    context.stroke();
+  }
+  context.fillStyle = "rgba(187, 224, 188, 0.42)";
+  context.beginPath();
+  context.arc(0.48, 0.27, 0.075, 0, Math.PI * 2);
+  context.fill();
+}
+
+function drawSlimeIllustration(context: CanvasRenderingContext2D): void {
+  context.fillStyle = "#75578a";
+  context.strokeStyle = "#c7a5cc";
+  context.beginPath();
+  context.moveTo(0.2, 0.73);
+  context.bezierCurveTo(0.19, 0.57, 0.28, 0.32, 0.5, 0.27);
+  context.bezierCurveTo(0.72, 0.32, 0.81, 0.57, 0.8, 0.73);
+  context.bezierCurveTo(0.69, 0.82, 0.31, 0.82, 0.2, 0.73);
+  context.closePath();
+  context.fill();
+  context.stroke();
+  context.fillStyle = "#f5edf6";
+  context.beginPath();
+  context.arc(0.41, 0.55, 0.045, 0, Math.PI * 2);
+  context.arc(0.6, 0.55, 0.045, 0, Math.PI * 2);
+  context.fill();
+  context.strokeStyle = "#f5edf6";
+  context.lineWidth = 0.025;
+  context.beginPath();
+  context.arc(0.5, 0.63, 0.09, 0.1, Math.PI - 0.1);
+  context.stroke();
+}
+
+function drawSnakeIllustration(context: CanvasRenderingContext2D): void {
+  context.strokeStyle = "#78b694";
+  context.lineWidth = 0.17;
+  context.beginPath();
+  context.moveTo(0.22, 0.72);
+  context.bezierCurveTo(0.78, 0.78, 0.22, 0.5, 0.62, 0.42);
+  context.bezierCurveTo(0.77, 0.39, 0.7, 0.27, 0.63, 0.25);
+  context.stroke();
+  context.fillStyle = "#315443";
+  context.strokeStyle = "#78b694";
+  context.lineWidth = 0.035;
+  context.beginPath();
+  context.ellipse(0.65, 0.25, 0.14, 0.105, -0.18, 0, Math.PI * 2);
+  context.fill();
+  context.stroke();
+  context.fillStyle = "#f3e9d0";
+  context.beginPath();
+  context.arc(0.7, 0.22, 0.025, 0, Math.PI * 2);
+  context.fill();
+  context.strokeStyle = "#e78f9f";
+  context.lineWidth = 0.018;
+  context.beginPath();
+  context.moveTo(0.78, 0.27);
+  context.lineTo(0.87, 0.28);
+  context.moveTo(0.86, 0.28);
+  context.lineTo(0.9, 0.25);
+  context.moveTo(0.86, 0.28);
+  context.lineTo(0.9, 0.31);
+  context.stroke();
+}
+
+function drawStoneIllustration(context: CanvasRenderingContext2D): void {
+  context.fillStyle = "#55515a";
+  context.strokeStyle = "#aaa4af";
+  context.beginPath();
+  context.moveTo(0.19, 0.72);
+  context.lineTo(0.25, 0.46);
+  context.lineTo(0.39, 0.29);
+  context.lineTo(0.66, 0.31);
+  context.lineTo(0.8, 0.49);
+  context.lineTo(0.76, 0.73);
+  context.closePath();
+  context.fill();
+  context.stroke();
+  context.strokeStyle = "rgba(235, 230, 239, 0.35)";
+  context.lineWidth = 0.025;
+  context.beginPath();
+  context.moveTo(0.35, 0.48);
+  context.lineTo(0.48, 0.39);
+  context.lineTo(0.63, 0.42);
+  context.stroke();
+}
+
+function drawShieldIllustration(context: CanvasRenderingContext2D): void {
+  context.fillStyle = "#385867";
+  context.strokeStyle = "#9bc3d0";
+  context.beginPath();
+  context.moveTo(0.5, 0.2);
+  context.lineTo(0.78, 0.3);
+  context.lineTo(0.74, 0.61);
+  context.bezierCurveTo(0.68, 0.75, 0.57, 0.82, 0.5, 0.86);
+  context.bezierCurveTo(0.43, 0.82, 0.32, 0.75, 0.26, 0.61);
+  context.lineTo(0.22, 0.3);
+  context.closePath();
+  context.fill();
+  context.stroke();
+  context.strokeStyle = "rgba(218, 240, 246, 0.65)";
+  context.lineWidth = 0.04;
+  context.beginPath();
+  context.moveTo(0.5, 0.29);
+  context.lineTo(0.5, 0.73);
+  context.moveTo(0.31, 0.45);
+  context.lineTo(0.69, 0.45);
+  context.stroke();
+}
+
+function drawCrownIllustration(context: CanvasRenderingContext2D): void {
+  context.fillStyle = "#bda146";
+  context.strokeStyle = "#f2d575";
+  context.beginPath();
+  context.moveTo(0.2, 0.35);
+  context.lineTo(0.36, 0.54);
+  context.lineTo(0.5, 0.25);
+  context.lineTo(0.64, 0.54);
+  context.lineTo(0.8, 0.35);
+  context.lineTo(0.73, 0.74);
+  context.lineTo(0.27, 0.74);
+  context.closePath();
+  context.fill();
+  context.stroke();
+  context.fillStyle = "#8b4966";
+  for (const x of [0.35, 0.5, 0.65]) {
+    context.beginPath();
+    context.arc(x, 0.64, 0.035, 0, Math.PI * 2);
+    context.fill();
+  }
+}
+
+function drawKnightIllustration(
+  context: CanvasRenderingContext2D,
+  chaser: boolean,
+): void {
+  context.fillStyle = chaser ? "#4b5662" : "#3d5966";
+  context.strokeStyle = chaser ? "#f0a36e" : "#9ac0cc";
+  context.beginPath();
+  context.roundRect(0.28, 0.56, 0.44, 0.25, 0.08);
+  context.fill();
+  context.stroke();
+  context.beginPath();
+  context.arc(0.5, 0.42, 0.24, Math.PI, 0);
+  context.lineTo(0.74, 0.59);
+  context.lineTo(0.26, 0.59);
+  context.closePath();
+  context.fill();
+  context.stroke();
+  context.fillStyle = "#171a1e";
+  context.fillRect(0.29, 0.45, 0.42, 0.085);
+  context.strokeStyle = "#cddde2";
+  context.lineWidth = 0.018;
+  for (const x of [0.37, 0.45, 0.53, 0.61]) {
+    context.beginPath();
+    context.moveTo(x, 0.46);
+    context.lineTo(x, 0.52);
+    context.stroke();
+  }
+  context.fillStyle = "#8d4260";
+  context.beginPath();
+  context.moveTo(0.48, 0.2);
+  context.quadraticCurveTo(0.63, 0.08, 0.7, 0.26);
+  context.quadraticCurveTo(0.58, 0.2, 0.48, 0.28);
+  context.closePath();
+  context.fill();
+}
+
+function drawKeyIllustration(context: CanvasRenderingContext2D): void {
+  context.strokeStyle = "#e1c86e";
+  context.lineWidth = 0.105;
+  context.beginPath();
+  context.arc(0.36, 0.4, 0.16, 0, Math.PI * 2);
+  context.moveTo(0.48, 0.51);
+  context.lineTo(0.75, 0.78);
+  context.moveTo(0.65, 0.68);
+  context.lineTo(0.74, 0.59);
+  context.moveTo(0.72, 0.75);
+  context.lineTo(0.8, 0.67);
+  context.stroke();
+  context.strokeStyle = "#5a4b24";
+  context.lineWidth = 0.025;
+  context.beginPath();
+  context.arc(0.36, 0.4, 0.065, 0, Math.PI * 2);
+  context.stroke();
+}
+
+function drawBatIllustration(context: CanvasRenderingContext2D): void {
+  context.fillStyle = "#49314f";
+  context.strokeStyle = "#bd91c7";
+  context.beginPath();
+  context.moveTo(0.45, 0.47);
+  context.quadraticCurveTo(0.25, 0.23, 0.08, 0.34);
+  context.quadraticCurveTo(0.21, 0.47, 0.18, 0.69);
+  context.quadraticCurveTo(0.33, 0.57, 0.46, 0.64);
+  context.closePath();
+  context.moveTo(0.55, 0.47);
+  context.quadraticCurveTo(0.75, 0.23, 0.92, 0.34);
+  context.quadraticCurveTo(0.79, 0.47, 0.82, 0.69);
+  context.quadraticCurveTo(0.67, 0.57, 0.54, 0.64);
+  context.closePath();
+  context.fill();
+  context.stroke();
+  context.beginPath();
+  context.ellipse(0.5, 0.55, 0.14, 0.21, 0, 0, Math.PI * 2);
+  context.fill();
+  context.stroke();
+  context.fillStyle = "#f4c0cc";
+  context.beginPath();
+  context.arc(0.45, 0.51, 0.025, 0, Math.PI * 2);
+  context.arc(0.55, 0.51, 0.025, 0, Math.PI * 2);
+  context.fill();
+}
+
+function drawFenceIllustration(context: CanvasRenderingContext2D): void {
+  context.fillStyle = "#655044";
+  context.strokeStyle = "#b09b8e";
+  for (const x of [0.25, 0.5, 0.75]) {
+    context.beginPath();
+    context.moveTo(x - 0.075, 0.3);
+    context.lineTo(x, 0.2);
+    context.lineTo(x + 0.075, 0.3);
+    context.lineTo(x + 0.065, 0.8);
+    context.lineTo(x - 0.065, 0.8);
+    context.closePath();
+    context.fill();
+    context.stroke();
+  }
+  context.fillRect(0.16, 0.45, 0.68, 0.09);
+  context.strokeRect(0.16, 0.45, 0.68, 0.09);
+  context.fillRect(0.16, 0.65, 0.68, 0.09);
+  context.strokeRect(0.16, 0.65, 0.68, 0.09);
+}
+
+function drawMimicIllustration(context: CanvasRenderingContext2D): void {
+  context.fillStyle = "#62442e";
+  context.strokeStyle = "#c29b72";
+  context.beginPath();
+  context.roundRect(0.18, 0.46, 0.64, 0.34, 0.055);
+  context.fill();
+  context.stroke();
+  context.fillStyle = "#7c5637";
+  context.beginPath();
+  context.roundRect(0.18, 0.28, 0.64, 0.25, 0.08);
+  context.fill();
+  context.stroke();
+  context.fillStyle = "#21151d";
+  context.beginPath();
+  context.moveTo(0.22, 0.5);
+  context.lineTo(0.78, 0.5);
+  context.lineTo(0.7, 0.66);
+  context.lineTo(0.3, 0.66);
+  context.closePath();
+  context.fill();
+  context.fillStyle = "#f2e1cb";
+  for (const x of [0.32, 0.44, 0.56, 0.68]) {
+    context.beginPath();
+    context.moveTo(x - 0.045, 0.5);
+    context.lineTo(x, 0.58);
+    context.lineTo(x + 0.045, 0.5);
+    context.closePath();
+    context.fill();
+  }
+  context.fillStyle = "#e9c773";
+  context.fillRect(0.46, 0.65, 0.08, 0.12);
+}
+
+function drawFireIllustration(context: CanvasRenderingContext2D): void {
+  context.fillStyle = "#d96845";
+  context.strokeStyle = "#f2aa70";
+  context.beginPath();
+  context.moveTo(0.5, 0.16);
+  context.bezierCurveTo(0.61, 0.35, 0.79, 0.44, 0.75, 0.65);
+  context.bezierCurveTo(0.71, 0.83, 0.29, 0.83, 0.25, 0.65);
+  context.bezierCurveTo(0.2, 0.48, 0.36, 0.4, 0.38, 0.27);
+  context.bezierCurveTo(0.42, 0.34, 0.47, 0.31, 0.5, 0.16);
+  context.closePath();
+  context.fill();
+  context.stroke();
+  context.fillStyle = "#ffd27a";
+  context.beginPath();
+  context.moveTo(0.51, 0.42);
+  context.bezierCurveTo(0.58, 0.54, 0.62, 0.59, 0.6, 0.69);
+  context.bezierCurveTo(0.57, 0.78, 0.39, 0.77, 0.38, 0.67);
+  context.bezierCurveTo(0.36, 0.58, 0.45, 0.54, 0.51, 0.42);
+  context.closePath();
+  context.fill();
 }
 
 function isDirection(control: GameControl): control is DirectionControl {
@@ -1348,6 +1737,15 @@ function interpolatePoint(
 
 function pointsEqual(first: GridPoint, second: GridPoint): boolean {
   return first.x === second.x && first.y === second.y;
+}
+
+function pointInsideRect(point: GridPoint, rect: GridRect): boolean {
+  return (
+    point.x >= rect.x &&
+    point.y >= rect.y &&
+    point.x < rect.x + rect.width &&
+    point.y < rect.y + rect.height
+  );
 }
 
 function easeOutCubic(value: number): number {
