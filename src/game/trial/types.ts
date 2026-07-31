@@ -9,9 +9,10 @@ export type TrialAction =
   | "slash-en"
   | "reset";
 
-export type TrialTerrain = "floor" | "wall";
+export type TrialTerrain = "floor" | "wall" | "pit";
 
 export type NamedEntityKind =
+  | "tree"
   | "snake"
   | "stone"
   | "shield"
@@ -69,6 +70,11 @@ export interface FusionWallDefinition {
   conditionId: string;
 }
 
+export interface PitDefinition {
+  id: string;
+  position: GridPoint;
+}
+
 export interface TrialStageDefinition {
   id: string;
   number: number;
@@ -80,12 +86,15 @@ export interface TrialStageDefinition {
   terrain: readonly (readonly TrialTerrain[])[];
   playerStart: GridPoint;
   playerFacing: HeroDirection;
+  horizontalBlockStopsChaser: boolean;
   objects: readonly NamedEntityDefinition[];
   sightEnemies: readonly SightEnemyDefinition[];
   switches: readonly SwitchDefinition[];
   doors: readonly DoorDefinition[];
   goals: readonly GridPoint[];
   fusionWalls: readonly FusionWallDefinition[];
+  pits: readonly PitDefinition[];
+  displayTargetEntityId?: string;
   cameraAreas: readonly TrialCameraArea[];
   solutionActions: readonly TrialAction[];
 }
@@ -112,6 +121,7 @@ export interface TrialRunState {
   letters: readonly TrialLetterState[];
   activeConditionIds: readonly string[];
   openDoorIds: readonly string[];
+  filledPitIds: readonly string[];
   turnCount: number;
   status: TrialStatus;
   failureReason?: "caught" | "sight";
@@ -130,6 +140,7 @@ export interface SlashEvent {
   name?: string;
   succeeded: boolean;
   blockedAt?: GridPoint;
+  attemptedPositions?: readonly GridPoint[];
   revealed?: {
     entityId: string;
     jpName: string;
@@ -147,11 +158,20 @@ export interface FusionEvent {
   }[];
 }
 
+export interface PitFillEvent {
+  pitId: string;
+  letterId: string;
+  character: string;
+  from: GridPoint;
+  position: GridPoint;
+}
+
 export interface TrialActionResult {
   state: TrialCampaignState;
   consumedTurn: boolean;
   movedPlayer: boolean;
   pushedLetterId?: string;
+  filledPit?: PitFillEvent;
   slash?: SlashEvent;
   fusion?: FusionEvent;
   failed: boolean;

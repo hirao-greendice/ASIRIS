@@ -23,113 +23,44 @@ if (!chromePath) {
     "Chrome/Edge was not found. Set CHROME_PATH before running browser tests.",
   );
 }
+
 const host = "127.0.0.1";
 const port = 4179;
 const baseUrl = `http://${host}:${port}/`;
-const outputDirectory = await mkdtemp(join(tmpdir(), "mirishira-browser-"));
+const outputDirectory = await mkdtemp(
+  join(tmpdir(), "mirishira-browser-"),
+);
 
-const directions = (action, count) =>
-  Array.from({ length: count }, () => action);
-
-const solutions = [
-  ["slash-jp", "right", "right", ...directions("down", 4)],
-  [
-    "slash-jp",
-    ...directions("right", 5),
-    ...directions("left", 3),
-    "up",
-    "up",
-    "left",
-    "left",
-  ],
-  [
-    "slash-jp",
-    "right",
-    "down",
-    "left",
-    "left",
-    "right",
-    "right",
-    "down",
-    "down",
-  ],
-  ["slash-en", "down", "down", ...directions("right", 6)],
-  [
-    "slash-en",
-    "right",
-    ...directions("down", 4),
-    "right",
-    "down",
-    "down",
-  ],
-  [
-    "slash-en",
-    "up",
-    ...directions("right", 3),
-    "down",
-    "up",
-    ...directions("left", 3),
-    ...directions("down", 2),
-    ...directions("right", 3),
-    ...directions("left", 3),
-    ...directions("up", 4),
-    ...directions("right", 3),
-    "down",
-    "slash-en",
-    ...directions("right", 4),
-  ],
-  ["left", "up", "slash-en", ...directions("right", 4)],
-  [
-    "slash-en",
-    "left",
-    "right",
-    ...directions("slash-jp", 6),
-    "left",
-    "down",
-    "down",
-  ],
-  [
-    "slash-en",
-    "reset",
-    "left",
-    "up",
-    "slash-en",
-    "left",
-    "left",
-    ...directions("up", 5),
-    "right",
-  ],
-  [
-    "left",
-    "up",
-    "slash-jp",
-    "left",
-    "up",
-    "right",
-    "right",
-    "down",
-    "right",
-    "up",
-    "up",
-    "right",
-    "right",
-    "down",
-    "slash-jp",
-    "right",
-    "down",
-    "left",
-    "left",
-    "down",
-    "left",
-    "up",
-    "up",
-    "down",
-    "down",
-    "right",
-    "right",
-    "right",
-  ],
+const setupActions = [
+  "up",
+  "up",
+  "down",
+  "down",
+  "right",
+  "right",
+  "right",
+  "down",
 ];
+const exitActions = [
+  "right",
+  "down",
+  "down",
+  "down",
+  "right",
+  "right",
+  "right",
+];
+const solution = [...setupActions, "slash-en", ...exitActions];
+const japaneseAttempt = [...setupActions, "slash-jp", ...exitActions];
+
+const keyboardKeys = {
+  up: "ArrowUp",
+  down: "ArrowDown",
+  left: "ArrowLeft",
+  right: "ArrowRight",
+  "slash-jp": "j",
+  "slash-en": "k",
+};
 
 const server = await createServer({
   server: { host, port, strictPort: true },
@@ -147,93 +78,93 @@ try {
     viewport: { width: 1280, height: 900 },
   });
   const desktop = await desktopContext.newPage();
-  const browserErrors = [];
-  desktop.on("pageerror", (error) => browserErrors.push(error.message));
-  desktop.on("response", (response) => {
-    if (response.status() >= 400) {
-      browserErrors.push(`${response.status()} ${response.url()}`);
-    }
-  });
+  const desktopErrors = collectBrowserErrors(desktop);
   await desktop.goto(baseUrl, { waitUntil: "networkidle" });
   await desktop.waitForFunction(() => window.__MIRISHIRA_DEBUG__);
 
-  await desktop.keyboard.press("j");
-  await desktop.waitForTimeout(80);
-  let snapshot = await desktop.evaluate(() =>
-    window.__MIRISHIRA_DEBUG__.snapshot()
-  );
-  assert.match(snapshot.letters, /ヘ@3,2\|ビ@3,3/);
-  await desktop.screenshot({
-    path: join(outputDirectory, "desktop-stage1.png"),
-    fullPage: true,
-  });
-  await desktop.keyboard.press("r");
-  await desktop.waitForTimeout(120);
-  await desktop.keyboard.press("k");
-  await desktop.waitForTimeout(80);
-  snapshot = await desktop.evaluate(() =>
-    window.__MIRISHIRA_DEBUG__.snapshot()
-  );
-  assert.equal(snapshot.letters, "");
-  assert.equal(snapshot.turn, 1);
-  await desktop.keyboard.press("r");
-  await desktop.waitForTimeout(100);
-  await desktop.keyboard.press("ArrowRight");
-  await desktop.waitForTimeout(80);
-  snapshot = await desktop.evaluate(() =>
-    window.__MIRISHIRA_DEBUG__.snapshot()
-  );
-  assert.equal(snapshot.player, "4,1");
-  await desktop.keyboard.press("r");
-  await desktop.waitForTimeout(100);
+  const desktopHud = await desktop.evaluate(() => ({
+    stage: document.querySelector("[data-stage-label]")?.textContent,
+    target: document.querySelector("[data-sword-label]")?.textContent,
+    turn: document.querySelector("[data-turn-label]")?.textContent,
+    selectedStage: document.querySelector("[data-stage-select]")?.value,
+    stageOptions:
+      document.querySelector("[data-stage-select]")?.options.length,
+    canvas: document
+      .querySelector("#game-canvas")
+      ?.getBoundingClientRect().toJSON(),
+  }));
+  assert.match(desktopHud.stage, /STAGE 13 \/ 13/);
+  assert.match(desktopHud.target, /対象：騎士 \/ KNIGHT/);
+  assert.equal(desktopHud.turn, "TURN 0");
+  assert.equal(desktopHud.selectedStage, "12");
+  assert.equal(desktopHud.stageOptions, 13);
+  assert.ok(desktopHud.canvas.width >= 700);
+  assert.equal(desktopHud.canvas.width, desktopHud.canvas.height);
 
-  for (let index = 0; index < solutions.length; index += 1) {
-    snapshot = await desktop.evaluate(() =>
-      window.__MIRISHIRA_DEBUG__.snapshot()
-    );
-    assert.equal(snapshot.stage, index + 1);
-    for (const action of solutions[index]) {
-      await desktop.evaluate((nextAction) => {
-        window.__MIRISHIRA_DEBUG__.dispatch(nextAction);
-      }, action);
-    }
-
-    if (index < solutions.length - 1) {
-      try {
-        await desktop.waitForFunction(
-          (expectedStage) =>
-            window.__MIRISHIRA_DEBUG__.snapshot().stage === expectedStage,
-          index + 2,
-          { timeout: 2500 },
-        );
-      } catch (error) {
-        const stalled = await desktop.evaluate(() =>
-          window.__MIRISHIRA_DEBUG__.snapshot()
-        );
-        throw new Error(
-          `Browser solution stalled after stage ${index + 1}: ` +
-            JSON.stringify(stalled),
-          { cause: error },
-        );
-      }
-    } else {
-      await desktop.waitForFunction(
-        () => window.__MIRISHIRA_DEBUG__.snapshot().clear === true,
-        undefined,
-        { timeout: 2500 },
+  for (let index = 0; index < solution.length; index += 1) {
+    await desktop.keyboard.press(keyboardKeys[solution[index]]);
+    await desktop.waitForTimeout(75);
+    if (index === 8) {
+      const cut = await snapshot(desktop);
+      assert.equal(
+        cut.letters,
+        "K@7,8|N@7,9|I@7,10|G@7,11|H@7,12|T@7,13",
       );
+      assert.equal(cut.doors, "open");
+      assert.equal(cut.turn, 9);
     }
   }
-
-  snapshot = await desktop.evaluate(() =>
-    window.__MIRISHIRA_DEBUG__.snapshot()
+  await desktop.waitForFunction(
+    () => window.__MIRISHIRA_DEBUG__.snapshot().clear === true,
+    undefined,
+    { timeout: 2500 },
   );
-  assert.equal(snapshot.clear, true);
-  assert.deepEqual(browserErrors, []);
+  let state = await snapshot(desktop);
+  assert.equal(state.clear, true);
+  assert.equal(state.turn, 16);
   await desktop.screenshot({
     path: join(outputDirectory, "desktop-clear.png"),
     fullPage: true,
   });
+
+  await desktop.keyboard.press("r");
+  await desktop.waitForTimeout(100);
+  state = await snapshot(desktop);
+  assert.equal(state.player, "4,6");
+  assert.equal(state.turn, 0);
+  assert.equal(state.letters, "");
+  assert.equal(state.doors, "closed");
+  assert.equal(state.clear, false);
+
+  await performKeyboardActions(desktop, japaneseAttempt);
+  await desktop.waitForTimeout(700);
+  state = await snapshot(desktop);
+  assert.equal(state.status, "failed");
+  assert.equal(state.failureReason, "sight");
+  await desktop.screenshot({
+    path: join(outputDirectory, "desktop-sight-failure.png"),
+    fullPage: true,
+  });
+  await desktop.keyboard.press("r");
+  await desktop.waitForTimeout(100);
+  assert.equal((await snapshot(desktop)).status, "playing");
+
+  await desktop.locator("[data-stage-select]").selectOption("2");
+  await desktop.waitForTimeout(100);
+  state = await snapshot(desktop);
+  assert.equal(state.stage, 3);
+  assert.equal(state.stageId, "snake-two-jobs");
+  assert.equal(state.player, "1,2");
+  assert.equal(state.turn, 0);
+  await desktop.keyboard.press("ArrowRight");
+  await desktop.waitForTimeout(80);
+  assert.equal((await snapshot(desktop)).turn, 1);
+  await desktop.locator("[data-stage-select]").selectOption("12");
+  await desktop.waitForTimeout(100);
+  state = await snapshot(desktop);
+  assert.equal(state.stageId, "meeting-knight-rampart");
+  assert.equal(state.turn, 0);
+  assert.deepEqual(desktopErrors, []);
   await desktopContext.close();
 
   const mobileContext = await browser.newContext({
@@ -243,92 +174,81 @@ try {
     deviceScaleFactor: 1,
   });
   const mobile = await mobileContext.newPage();
-  const mobileErrors = [];
-  mobile.on("pageerror", (error) => mobileErrors.push(error.message));
+  const mobileErrors = collectBrowserErrors(mobile);
   await mobile.goto(baseUrl, { waitUntil: "networkidle" });
   await mobile.waitForFunction(() => window.__MIRISHIRA_DEBUG__);
 
-  const layout = await mobile.evaluate(() => {
-    const jp = document.querySelector('[data-control="slash-jp"]');
-    const en = document.querySelector('[data-control="slash-en"]');
-    const up = document.querySelector('[data-control="up"]');
-    const canvas = document.querySelector("#game-canvas");
-    const rect = (element) => element.getBoundingClientRect();
-    return {
-      innerHeight: window.innerHeight,
-      bodyHeight: document.body.scrollHeight,
-      documentHeight: document.documentElement.scrollHeight,
-      jp: rect(jp),
-      en: rect(en),
-      up: rect(up),
-      canvas: rect(canvas),
-    };
-  });
-  assert.ok(layout.bodyHeight <= layout.innerHeight + 1);
-  assert.ok(layout.documentHeight <= layout.innerHeight + 1);
-  assert.ok(layout.jp.width >= 68 && layout.jp.height >= 68);
-  assert.ok(layout.en.width >= 68 && layout.en.height >= 68);
-  assert.ok(layout.up.width >= 54 && layout.up.height >= 54);
-  assert.ok(layout.canvas.width <= 390 && layout.canvas.height <= 390);
+  const mobileLayout = await getMobileLayout(mobile);
+  assert.ok(mobileLayout.bodyHeight <= mobileLayout.innerHeight + 1);
+  assert.ok(mobileLayout.documentHeight <= mobileLayout.innerHeight + 1);
+  assert.ok(mobileLayout.jp.width >= 68 && mobileLayout.jp.height >= 68);
+  assert.ok(mobileLayout.en.width >= 68 && mobileLayout.en.height >= 68);
+  assert.ok(mobileLayout.up.width >= 54 && mobileLayout.up.height >= 54);
+  assert.ok(
+    mobileLayout.stageSelect.width >= 120 &&
+      mobileLayout.stageSelect.height >= 30,
+  );
+  assert.ok(mobileLayout.canvas.width <= 390);
+  assert.equal(mobileLayout.canvas.width, mobileLayout.canvas.height);
 
-  await mobile.locator('[data-control="slash-jp"]').tap();
-  await mobile.waitForTimeout(100);
-  snapshot = await mobile.evaluate(() =>
-    window.__MIRISHIRA_DEBUG__.snapshot()
+  for (let index = 0; index < solution.length; index += 1) {
+    await mobile
+      .locator(`[data-control="${solution[index]}"]`)
+      .tap();
+    await mobile.waitForTimeout(75);
+    if (index === 8) {
+      const cut = await snapshot(mobile);
+      assert.equal(
+        cut.letters,
+        "K@7,8|N@7,9|I@7,10|G@7,11|H@7,12|T@7,13",
+      );
+      assert.equal(cut.doors, "open");
+    }
+  }
+  await mobile.waitForFunction(
+    () => window.__MIRISHIRA_DEBUG__.snapshot().clear === true,
+    undefined,
+    { timeout: 2500 },
   );
-  assert.match(snapshot.letters, /ヘ@3,2\|ビ@3,3/);
-  await mobile.locator('[data-control="reset"]').tap();
-  await mobile.waitForTimeout(100);
-  snapshot = await mobile.evaluate(() =>
-    window.__MIRISHIRA_DEBUG__.snapshot()
-  );
-  assert.equal(snapshot.letters, "");
-  await mobile.locator('[data-control="slash-en"]').tap();
-  await mobile.waitForTimeout(100);
-  snapshot = await mobile.evaluate(() =>
-    window.__MIRISHIRA_DEBUG__.snapshot()
-  );
-  assert.equal(snapshot.letters, "");
-  assert.equal(snapshot.turn, 1);
-  await mobile.locator('[data-control="reset"]').tap();
-  await mobile.waitForTimeout(100);
-  await mobile.locator('[data-control="right"]').tap();
-  await mobile.waitForTimeout(100);
-  snapshot = await mobile.evaluate(() =>
-    window.__MIRISHIRA_DEBUG__.snapshot()
-  );
-  assert.equal(snapshot.player, "4,1");
-  await mobile.locator('[data-control="reset"]').tap();
-  await mobile.waitForTimeout(100);
-  assert.deepEqual(mobileErrors, []);
-
+  assert.equal((await snapshot(mobile)).turn, 16);
   await mobile.screenshot({
-    path: join(outputDirectory, "mobile-stage1.png"),
+    path: join(outputDirectory, "mobile-clear.png"),
     fullPage: true,
   });
 
+  await mobile.locator('[data-control="reset"]').tap();
+  await mobile.waitForTimeout(100);
+  state = await snapshot(mobile);
+  assert.equal(state.player, "4,6");
+  assert.equal(state.turn, 0);
+  assert.equal(state.clear, false);
+  await mobile.locator("[data-stage-select]").selectOption("0");
+  await mobile.waitForTimeout(100);
+  assert.equal((await snapshot(mobile)).stageId, "tree-single-letter");
+  await mobile.locator("[data-stage-select]").selectOption("12");
+  await mobile.waitForTimeout(100);
+  assert.equal(
+    (await snapshot(mobile)).stageId,
+    "meeting-knight-rampart",
+  );
+
   await mobile.setViewportSize({ width: 320, height: 568 });
   await mobile.waitForTimeout(100);
-  const compactLayout = await mobile.evaluate(() => {
-    const bounds = (selector) =>
-      document.querySelector(selector).getBoundingClientRect();
-    return {
-      innerHeight: window.innerHeight,
-      bodyHeight: document.body.scrollHeight,
-      documentHeight: document.documentElement.scrollHeight,
-      jp: bounds('[data-control="slash-jp"]'),
-      en: bounds('[data-control="slash-en"]'),
-      up: bounds('[data-control="up"]'),
-      canvas: bounds("#game-canvas"),
-    };
-  });
+  const compactLayout = await getMobileLayout(mobile);
   assert.ok(compactLayout.bodyHeight <= compactLayout.innerHeight + 1);
-  assert.ok(compactLayout.documentHeight <= compactLayout.innerHeight + 1);
+  assert.ok(
+    compactLayout.documentHeight <= compactLayout.innerHeight + 1,
+  );
   assert.ok(compactLayout.jp.width >= 68 && compactLayout.jp.height >= 68);
   assert.ok(compactLayout.en.width >= 68 && compactLayout.en.height >= 68);
   assert.ok(compactLayout.up.width >= 54 && compactLayout.up.height >= 54);
+  assert.ok(
+    compactLayout.stageSelect.width >= 120 &&
+      compactLayout.stageSelect.height >= 30,
+  );
+  assert.deepEqual(mobileErrors, []);
   await mobile.screenshot({
-    path: join(outputDirectory, "mobile-compact-stage1.png"),
+    path: join(outputDirectory, "mobile-compact.png"),
     fullPage: true,
   });
   await mobileContext.close();
@@ -338,7 +258,8 @@ try {
       {
         result: "passed",
         desktopClear: true,
-        mobileLayout: layout,
+        mobileClear: true,
+        mobileLayout,
         compactLayout,
         screenshots: outputDirectory,
       },
@@ -349,4 +270,43 @@ try {
 } finally {
   await browser.close();
   await server.close();
+}
+
+async function performKeyboardActions(page, actions) {
+  for (const action of actions) {
+    await page.keyboard.press(keyboardKeys[action]);
+    await page.waitForTimeout(75);
+  }
+}
+
+async function snapshot(page) {
+  return page.evaluate(() => window.__MIRISHIRA_DEBUG__.snapshot());
+}
+
+function collectBrowserErrors(page) {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) {
+      errors.push(`${response.status()} ${response.url()}`);
+    }
+  });
+  return errors;
+}
+
+async function getMobileLayout(page) {
+  return page.evaluate(() => {
+    const bounds = (selector) =>
+      document.querySelector(selector).getBoundingClientRect().toJSON();
+    return {
+      innerHeight: window.innerHeight,
+      bodyHeight: document.body.scrollHeight,
+      documentHeight: document.documentElement.scrollHeight,
+      jp: bounds('[data-control="slash-jp"]'),
+      en: bounds('[data-control="slash-en"]'),
+      up: bounds('[data-control="up"]'),
+      stageSelect: bounds("[data-stage-select]"),
+      canvas: bounds("#game-canvas"),
+    };
+  });
 }

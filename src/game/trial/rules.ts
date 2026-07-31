@@ -1,6 +1,9 @@
 import type { HeroDirection } from "../assets/GameAssets";
 import type { GridPoint } from "../core/stageTypes";
-import { trialStages } from "./stages";
+import {
+  defaultTrialStageIndex,
+  trialStages,
+} from "./stages";
 import type {
   DoorDefinition,
   NamedEntityDefinition,
@@ -33,7 +36,7 @@ export function splitGraphemes(value: string): string[] {
 
 export function createTrialCampaignState(
   discoveredUnknownIds: readonly string[] = [],
-  stageIndex = 0,
+  stageIndex = defaultTrialStageIndex,
 ): TrialCampaignState {
   const safeIndex = Math.max(0, Math.min(stageIndex, trialStages.length - 1));
   return {
@@ -48,7 +51,10 @@ export function resetTrialStage(
   state: TrialCampaignState,
 ): TrialCampaignState {
   if (state.isClear) {
-    return createTrialCampaignState(state.discoveredUnknownIds, 0);
+    return createTrialCampaignState(
+      state.discoveredUnknownIds,
+      state.stageIndex,
+    );
   }
   return {
     ...state,
@@ -91,6 +97,7 @@ export function resolveTrialAction(
   let consumedTurn = false;
   let movedPlayer = false;
   let pushedLetterId: string | undefined;
+  let filledPit: TrialActionResult["filledPit"];
   let slash: TrialActionResult["slash"];
   let fusion: TrialActionResult["fusion"];
   let pendingConditionId: string | undefined;
@@ -101,6 +108,7 @@ export function resolveTrialAction(
     consumedTurn = movementResult.consumedTurn;
     movedPlayer = movementResult.movedPlayer;
     pushedLetterId = movementResult.pushedLetterId;
+    filledPit = movementResult.filledPit;
     fusion = movementResult.fusion;
     pendingConditionId = movementResult.pendingConditionId;
   } else {
@@ -116,6 +124,7 @@ export function resolveTrialAction(
       consumedTurn: false,
       movedPlayer,
       pushedLetterId,
+      filledPit,
       slash,
       fusion,
       failed: false,
@@ -124,13 +133,6 @@ export function resolveTrialAction(
   }
 
   run.turnCount += 1;
-  moveChasers(stage, run);
-
-  if (hasChaserAt(stage, run, run.player)) {
-    run.status = "failed";
-    run.failureReason = "caught";
-  }
-
   if (
     pendingConditionId &&
     !run.activeConditionIds.includes(pendingConditionId)
@@ -141,6 +143,13 @@ export function resolveTrialAction(
     ];
   }
   run.openDoorIds = computeOpenDoorIds(stage, run);
+
+  moveChasers(stage, run);
+
+  if (hasChaserAt(stage, run, run.player)) {
+    run.status = "failed";
+    run.failureReason = "caught";
+  }
 
   if (
     run.status !== "failed" &&
@@ -160,6 +169,7 @@ export function resolveTrialAction(
     consumedTurn,
     movedPlayer,
     pushedLetterId,
+    filledPit,
     slash,
     fusion,
     failed: run.status === "failed",
@@ -270,6 +280,7 @@ function createRunState(stage: TrialStageDefinition): TrialRunState {
     letters: [],
     activeConditionIds: [],
     openDoorIds: [],
+    filledPitIds: [],
     turnCount: 0,
     status: "playing",
   };
@@ -295,6 +306,7 @@ function cloneCampaignState(
       })),
       activeConditionIds: [...state.run.activeConditionIds],
       openDoorIds: [...state.run.openDoorIds],
+      filledPitIds: [...state.run.filledPitIds],
     },
   };
 }
@@ -307,6 +319,7 @@ function resolveMove(
   consumedTurn: boolean;
   movedPlayer: boolean;
   pushedLetterId?: string;
+  filledPit?: TrialActionResult["filledPit"];
   fusion?: TrialActionResult["fusion"];
   pendingConditionId?: string;
 } {
@@ -358,6 +371,27 @@ function resolveMove(
   }
 
   const next = addPoints(destination, movement);
+  const pit = stage.pits.find((entry) => pointsEqual(entry.position, next));
+  if (pit && !run.filledPitIds.includes(pit.id)) {
+    const letterId = firstLetter.id;
+    const character = firstLetter.character;
+    const from = { ...firstLetter.position };
+    run.letters = run.letters.filter((entry) => entry.id !== letterId);
+    run.filledPitIds = [...run.filledPitIds, pit.id];
+    run.player = destination;
+    return {
+      consumedTurn: true,
+      movedPlayer: true,
+      filledPit: {
+        pitId: pit.id,
+        letterId,
+        character,
+        from,
+        position: { ...pit.position },
+      },
+    };
+  }
+
   if (!isLetterDestinationFree(stage, run, next)) {
     return { consumedTurn: false, movedPlayer: false };
   }
@@ -387,6 +421,7 @@ function resolveSlash(
       language,
       succeeded: false,
       blockedAt: target,
+      attemptedPositions: [target],
     };
   }
 
@@ -423,6 +458,7 @@ function resolveSlash(
       name,
       succeeded: false,
       blockedAt: spawnPositions[Math.max(0, blockedIndex)] ?? target,
+      attemptedPositions: spawnPositions,
       revealed,
     };
   }
@@ -449,6 +485,7 @@ function resolveSlash(
     targetEntityId: definition.id,
     name,
     succeeded: true,
+    attemptedPositions: spawnPositions,
     revealed,
     spawnedLetterIds,
   };
@@ -481,6 +518,7 @@ function chooseChaserMove(
     if (isChaserDestinationFree(stage, run, horizontal, entity.id)) {
       return horizontal;
     }
+    if (stage.horizontalBlockStopsChaser) return undefined;
   }
 
   const verticalDifference = run.player.y - entity.position.y;
@@ -502,7 +540,7 @@ function isChaserDestinationFree(
   point: GridPoint,
   movingEntityId: string,
 ): boolean {
-  if (!isInside(stage, point) || stage.terrain[point.y][point.x] === "wall") {
+  if (!isTerrainWalkable(stage, run, point)) {
     return false;
   }
   if (findLetter(run, point)) return false;
@@ -531,7 +569,7 @@ function isBaseEntitySpace(
   run: TrialRunState,
   point: GridPoint,
 ): boolean {
-  if (!isInside(stage, point) || stage.terrain[point.y][point.x] === "wall") {
+  if (!isTerrainWalkable(stage, run, point)) {
     return false;
   }
   if (stage.sightEnemies.some((entry) => pointsEqual(entry.position, point))) {
@@ -565,7 +603,7 @@ function isSlashSpawnFree(
   point: GridPoint,
   targetEntityId: string,
 ): boolean {
-  if (!isInside(stage, point) || stage.terrain[point.y][point.x] === "wall") {
+  if (!isTerrainWalkable(stage, run, point)) {
     return false;
   }
   if (findLetter(run, point)) return false;
@@ -601,6 +639,19 @@ function isSightBlockingTile(
       pointsEqual(door.position, point) &&
       !isDoorOpen(run, stage, door),
   );
+}
+
+function isTerrainWalkable(
+  stage: TrialStageDefinition,
+  run: TrialRunState,
+  point: GridPoint,
+): boolean {
+  if (!isInside(stage, point)) return false;
+  const terrain = stage.terrain[point.y][point.x];
+  if (terrain === "wall") return false;
+  if (terrain !== "pit") return true;
+  const pit = stage.pits.find((entry) => pointsEqual(entry.position, point));
+  return pit !== undefined && run.filledPitIds.includes(pit.id);
 }
 
 function computeOpenDoorIds(

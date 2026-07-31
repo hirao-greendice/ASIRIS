@@ -39,7 +39,6 @@ const HOLD_DELAY_SECONDS = 0.29;
 const HOLD_REPEAT_SECONDS = 0.22;
 const ATTACK_SECONDS = 0.2;
 const SPAWN_SECONDS = 0.3;
-const FAILURE_SECONDS = 0.48;
 const COMPLETION_SECONDS = 0.62;
 const STAGE_BANNER_SECONDS = 1.05;
 
@@ -52,6 +51,7 @@ const DIRECTION_ARROW: Readonly<Record<HeroDirection, string>> = {
 
 export interface TrialGameHud {
   stageLabel: HTMLElement;
+  stageSelect: HTMLSelectElement;
   hintLabel: HTMLElement;
   nameLabel: HTMLElement;
   turnLabel: HTMLElement;
@@ -71,7 +71,7 @@ interface SpawnEffect {
 }
 
 interface BlockedEffect {
-  position: GridPoint;
+  positions: readonly GridPoint[];
   elapsed: number;
 }
 
@@ -82,6 +82,13 @@ interface RevealEffect {
 }
 
 interface FusionVisual extends FusionEvent {
+  elapsed: number;
+}
+
+interface PitVisual {
+  character: string;
+  from: GridPoint;
+  position: GridPoint;
   elapsed: number;
 }
 
@@ -113,6 +120,7 @@ export class TrialGame {
   private blockedEffect: BlockedEffect | null = null;
   private revealEffect: RevealEffect | null = null;
   private fusionVisual: FusionVisual | null = null;
+  private pitVisual: PitVisual | null = null;
   private attackRemaining = 0;
   private attackLanguage: "jp" | "en" = "jp";
   private stageBannerRemaining = STAGE_BANNER_SECONDS;
@@ -129,6 +137,15 @@ export class TrialGame {
     this.resizeObserver = new ResizeObserver(this.resize);
     this.resizeObserver.observe(canvas);
     this.resize();
+    this.populateStageSelect();
+    this.hud.stageSelect.addEventListener(
+      "change",
+      this.handleStageSelection,
+    );
+    this.hud.stageSelect.addEventListener(
+      "keydown",
+      this.stopStageSelectKeyPropagation,
+    );
     this.syncHud();
     this.installDebugApi();
     this.animationFrame = requestAnimationFrame(this.loop);
@@ -137,6 +154,14 @@ export class TrialGame {
   destroy(): void {
     cancelAnimationFrame(this.animationFrame);
     this.resizeObserver.disconnect();
+    this.hud.stageSelect.removeEventListener(
+      "change",
+      this.handleStageSelection,
+    );
+    this.hud.stageSelect.removeEventListener(
+      "keydown",
+      this.stopStageSelectKeyPropagation,
+    );
     this.soundEffects.destroy();
     delete (window as DebugWindow).__MIRISHIRA_DEBUG__;
   }
@@ -192,8 +217,12 @@ export class TrialGame {
       this.fusionVisual.elapsed += deltaSeconds;
       if (this.fusionVisual.elapsed >= 0.42) this.fusionVisual = null;
     }
+    if (this.pitVisual) {
+      this.pitVisual.elapsed += deltaSeconds;
+      if (this.pitVisual.elapsed >= 0.34) this.pitVisual = null;
+    }
 
-    if (this.transitionKind) {
+    if (this.transitionKind === "completed") {
       this.transitionCountdown -= deltaSeconds;
       if (this.transitionCountdown <= 0) this.finishTransition();
     }
@@ -201,11 +230,11 @@ export class TrialGame {
     this.updateHeldDirection(deltaSeconds);
     if (this.input.consumePress("reset")) {
       this.handleControl("reset");
-    } else if (this.actionCooldown <= 0) {
+    } else {
       const control = this.input.consumeNextPress();
       if (control) {
         this.handleControl(control);
-      } else if (!this.transitionKind) {
+      } else if (this.actionCooldown <= 0 && !this.transitionKind) {
         this.tryHeldMove();
       }
     }
@@ -283,7 +312,7 @@ export class TrialGame {
     this.actionCooldown = result.consumedTurn ? STEP_SECONDS : 0.055;
     if (result.failed) {
       this.transitionKind = "failed";
-      this.transitionCountdown = FAILURE_SECONDS;
+      this.transitionCountdown = 0;
     } else if (result.completed) {
       this.transitionKind = "completed";
       this.transitionCountdown = COMPLETION_SECONDS;
@@ -345,7 +374,9 @@ export class TrialGame {
         };
       } else if (result.slash.blockedAt) {
         this.blockedEffect = {
-          position: { ...result.slash.blockedAt },
+          positions: (
+            result.slash.attemptedPositions ?? [result.slash.blockedAt]
+          ).map((position) => ({ ...position })),
           elapsed: 0,
         };
       }
@@ -361,6 +392,14 @@ export class TrialGame {
     if (result.fusion) {
       this.fusionVisual = { ...result.fusion, elapsed: 0 };
     }
+    if (result.filledPit) {
+      this.pitVisual = {
+        character: result.filledPit.character,
+        from: { ...result.filledPit.from },
+        position: { ...result.filledPit.position },
+        elapsed: 0,
+      };
+    }
   }
 
   private playActionSound(result: TrialActionResult): void {
@@ -370,6 +409,7 @@ export class TrialGame {
       if (result.slash.revealed) this.soundEffects.reveal();
     }
     if (result.pushedLetterId) this.soundEffects.lockLetter();
+    if (result.filledPit) this.soundEffects.drop();
     if (result.fusion) this.soundEffects.fuse();
     if (result.failed) this.soundEffects.danger();
     if (result.completed) this.soundEffects.solve();
@@ -379,11 +419,7 @@ export class TrialGame {
     const kind = this.transitionKind;
     this.transitionKind = null;
     this.transitionCountdown = 0;
-    if (kind === "failed") {
-      this.state = resetTrialStage(this.state);
-      this.soundEffects.reset();
-      this.stageBannerRemaining = 0;
-    } else if (kind === "completed") {
+    if (kind === "completed") {
       this.state = advanceTrialStage(this.state);
       this.soundEffects.door();
       this.stageBannerRemaining = STAGE_BANNER_SECONDS;
@@ -407,6 +443,51 @@ export class TrialGame {
     this.syncHud();
   }
 
+  private populateStageSelect(): void {
+    const options = trialStages.map((stage, index) => {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent =
+        `${String(stage.number).padStart(2, "0")}　${stage.title}` +
+        `　[${stage.width}×${stage.height}]`;
+      return option;
+    });
+    this.hud.stageSelect.replaceChildren(...options);
+  }
+
+  private handleStageSelection = (): void => {
+    const stageIndex = Number.parseInt(this.hud.stageSelect.value, 10);
+    if (
+      !Number.isInteger(stageIndex) ||
+      stageIndex < 0 ||
+      stageIndex >= trialStages.length
+    ) {
+      this.hud.stageSelect.value = String(this.state.stageIndex);
+      return;
+    }
+
+    this.state = createTrialCampaignState(
+      this.state.discoveredUnknownIds,
+      stageIndex,
+    );
+    this.transitionKind = null;
+    this.transitionCountdown = 0;
+    this.clearVisuals();
+    this.input.clearPendingPresses();
+    this.repeatDirection = null;
+    this.repeatCountdown = 0;
+    this.actionCooldown = 0.08;
+    this.stageBannerRemaining = STAGE_BANNER_SECONDS;
+    this.soundEffects.reset();
+    this.syncHud();
+  };
+
+  private stopStageSelectKeyPropagation = (
+    event: KeyboardEvent,
+  ): void => {
+    event.stopPropagation();
+  };
+
   private clearVisuals(): void {
     this.playerMotion = null;
     this.letterMotions.clear();
@@ -414,19 +495,33 @@ export class TrialGame {
     this.blockedEffect = null;
     this.revealEffect = null;
     this.fusionVisual = null;
+    this.pitVisual = null;
     this.attackRemaining = 0;
   }
 
   private syncHud(): void {
     const stage = getActiveTrialStage(this.state);
     this.hud.stageLabel.textContent =
-      `STAGE ${stage.number} / ${trialStages.length}　「${stage.title}」`;
+      `STAGE ${stage.number} / ${trialStages.length}`;
+    this.hud.stageSelect.value = String(this.state.stageIndex);
     this.hud.hintLabel.textContent = stage.hint;
     this.hud.turnLabel.textContent = `TURN ${this.state.run.turnCount}`;
 
+    const persistentTarget = stage.displayTargetEntityId
+      ? stage.objects.find(
+          (entry) => entry.id === stage.displayTargetEntityId,
+        )
+      : undefined;
+    if (persistentTarget) {
+      this.hud.nameLabel.textContent =
+        `対象：${persistentTarget.jpName} / ${persistentTarget.enName}`;
+      this.hud.nameLabel.dataset.unknown = "false";
+      return;
+    }
+
     const facing = getFacingEntity(this.state);
     if (!facing) {
-      this.hud.nameLabel.textContent = "正面：—";
+      this.hud.nameLabel.textContent = "対象：—";
       this.hud.nameLabel.dataset.unknown = "false";
     } else if (!facing.isDiscovered) {
       this.hud.nameLabel.textContent = "JP：???　/　EN：???";
@@ -459,6 +554,7 @@ export class TrialGame {
     this.drawSightEnemies(stage, camera, tileSize);
     this.drawLetters(camera, tileSize);
     this.drawFusionVisual(camera, tileSize);
+    this.drawPitVisual(camera, tileSize);
     this.drawPlayer(camera, tileSize);
     this.drawEffects(camera, tileSize);
     this.drawOverlay(size);
@@ -477,6 +573,39 @@ export class TrialGame {
         const fusionWall = stage.fusionWalls.some((entry) =>
           pointsEqual(entry.position, point)
         );
+        if (stage.terrain[y][x] === "pit") {
+          const pit = stage.pits.find((entry) =>
+            pointsEqual(entry.position, point)
+          );
+          const filled =
+            pit !== undefined &&
+            this.state.run.filledPitIds.includes(pit.id);
+          context.fillStyle = filled ? "#2a242d" : "#090c12";
+          context.fillRect(rect.x, rect.y, rect.size, rect.size);
+          context.strokeStyle = filled ? "#75647a" : "#6892a2";
+          context.lineWidth = Math.max(1.5, tileSize * 0.04);
+          context.beginPath();
+          context.ellipse(
+            rect.x + tileSize / 2,
+            rect.y + tileSize / 2,
+            tileSize * 0.34,
+            tileSize * 0.22,
+            0,
+            0,
+            Math.PI * 2,
+          );
+          context.fillStyle = filled ? "#443847" : "#05070b";
+          context.fill();
+          context.stroke();
+          this.drawCenteredText(
+            filled ? "床" : "≈",
+            rect,
+            filled ? "#aa96ae" : "#9cc7d3",
+            filled ? 0.2 : 0.42,
+            700,
+          );
+          continue;
+        }
         if (stage.terrain[y][x] === "wall" && !fusionWall) {
           context.fillStyle = (x + y) % 2 === 0 ? "#28222b" : "#241f27";
           context.fillRect(rect.x, rect.y, rect.size + 0.5, rect.size + 0.5);
@@ -559,6 +688,11 @@ export class TrialGame {
     }
 
     for (const goal of stage.goals) {
+      if (
+        stage.doors.some((door) => pointsEqual(door.position, goal))
+      ) {
+        continue;
+      }
       const rect = this.cellRect(goal, camera, tileSize);
       context.fillStyle = "rgba(191, 222, 200, 0.12)";
       context.fillRect(
@@ -600,7 +734,7 @@ export class TrialGame {
       );
       context.restore();
       this.drawCenteredText(
-        open ? "OPEN" : "D",
+        open ? "EXIT" : "D",
         rect,
         open ? "#eadced" : "#f0e8f1",
         open ? 0.2 : 0.4,
@@ -861,6 +995,29 @@ export class TrialGame {
     }
   }
 
+  private drawPitVisual(camera: GridRect, tileSize: number): void {
+    if (!this.pitVisual) return;
+    const progress = easeInCubic(
+      clamp(this.pitVisual.elapsed / 0.3, 0, 1),
+    );
+    const position = interpolatePoint(
+      this.pitVisual.from,
+      this.pitVisual.position,
+      progress,
+    );
+    position.y += progress * 0.18;
+    const rect = this.cellRect(position, camera, tileSize);
+    this.context.globalAlpha = 1 - progress * 0.85;
+    this.drawCenteredText(
+      this.pitVisual.character,
+      rect,
+      "#f4eaf5",
+      0.5 * (1 - progress * 0.45),
+      900,
+    );
+    this.context.globalAlpha = 1;
+  }
+
   private drawPlayer(camera: GridRect, tileSize: number): void {
     const position = this.playerMotion
       ? interpolateMotion(this.playerMotion)
@@ -889,24 +1046,22 @@ export class TrialGame {
 
   private drawEffects(camera: GridRect, tileSize: number): void {
     if (this.blockedEffect) {
-      const rect = this.cellRect(
-        this.blockedEffect.position,
-        camera,
-        tileSize,
-      );
       const progress = this.blockedEffect.elapsed / 0.34;
-      this.context.fillStyle =
-        `rgba(236, 61, 76, ${0.42 * (1 - progress)})`;
-      this.context.fillRect(rect.x, rect.y, rect.size, rect.size);
-      this.context.strokeStyle =
-        `rgba(255, 150, 157, ${0.9 * (1 - progress)})`;
-      this.context.lineWidth = Math.max(2, tileSize * 0.07);
-      this.context.strokeRect(
-        rect.x + tileSize * 0.07,
-        rect.y + tileSize * 0.07,
-        tileSize * 0.86,
-        tileSize * 0.86,
-      );
+      for (const position of this.blockedEffect.positions) {
+        const rect = this.cellRect(position, camera, tileSize);
+        this.context.fillStyle =
+          `rgba(236, 61, 76, ${0.42 * (1 - progress)})`;
+        this.context.fillRect(rect.x, rect.y, rect.size, rect.size);
+        this.context.strokeStyle =
+          `rgba(255, 150, 157, ${0.9 * (1 - progress)})`;
+        this.context.lineWidth = Math.max(2, tileSize * 0.07);
+        this.context.strokeRect(
+          rect.x + tileSize * 0.07,
+          rect.y + tileSize * 0.07,
+          tileSize * 0.86,
+          tileSize * 0.86,
+        );
+      }
     }
   }
 
@@ -969,14 +1124,9 @@ export class TrialGame {
     }
 
     if (this.transitionKind === "failed") {
-      const alpha = clamp(
-        1 - this.transitionCountdown / FAILURE_SECONDS,
-        0,
-        1,
-      );
-      context.fillStyle = `rgba(109, 12, 26, ${0.38 * alpha})`;
+      context.fillStyle = "rgba(109, 12, 26, 0.38)";
       context.fillRect(0, 0, size, size);
-      context.fillStyle = `rgba(255, 226, 229, ${alpha})`;
+      context.fillStyle = "#ffe2e5";
       context.textAlign = "center";
       context.textBaseline = "middle";
       context.font = `900 ${Math.max(20, size * 0.07)}px sans-serif`;
@@ -984,6 +1134,12 @@ export class TrialGame {
         this.state.run.failureReason === "caught" ? "つかまった" : "見つかった",
         size / 2,
         size / 2,
+      );
+      context.font = `700 ${Math.max(11, size * 0.026)}px sans-serif`;
+      context.fillText(
+        "R またはリセットで再挑戦",
+        size / 2,
+        size * 0.58,
       );
     } else if (this.transitionKind === "completed") {
       const alpha = clamp(
@@ -1068,6 +1224,7 @@ export class TrialGame {
     this.canvas.dataset.turn = String(snapshot.turn);
     this.canvas.dataset.letters = snapshot.letters;
     this.canvas.dataset.doors = snapshot.doors;
+    this.canvas.dataset.pits = snapshot.pits;
   }
 
   private createDebugSnapshot(): {
@@ -1079,6 +1236,8 @@ export class TrialGame {
     turn: number;
     letters: string;
     doors: string;
+    pits: string;
+    failureReason?: string;
     discovered: readonly string[];
     clear: boolean;
   } {
@@ -1099,6 +1258,12 @@ export class TrialGame {
       doors: stage.doors
         .map((door) => (isDoorOpen(this.state.run, stage, door) ? "open" : "closed"))
         .join("|"),
+      pits: stage.pits
+        .map((pit) =>
+          this.state.run.filledPitIds.includes(pit.id) ? "filled" : "open"
+        )
+        .join("|"),
+      failureReason: this.state.run.failureReason,
       discovered: [...this.state.discoveredUnknownIds],
       clear: this.state.isClear,
     };
@@ -1132,6 +1297,8 @@ function objectColors(kind: NamedEntityDefinition["kind"]): {
   text: string;
 } {
   switch (kind) {
+    case "tree":
+      return { fill: "#36503a", stroke: "#82ad87", text: "#e1f2e3" };
     case "fire":
       return { fill: "#74392f", stroke: "#de846b", text: "#ffd7c8" };
     case "bat":

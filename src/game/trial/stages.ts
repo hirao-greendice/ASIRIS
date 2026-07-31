@@ -36,10 +36,14 @@ interface StageSpec {
     conditionId: string;
   };
   doorConditionIds?: readonly string[];
+  doorIsGoal?: boolean;
+  alwaysShowTargetName?: boolean;
+  horizontalBlockStopsChaser?: boolean;
   solutionActions: readonly TrialAction[];
 }
 
 const ENTITY_CATALOG: Readonly<Record<string, EntityCatalogEntry>> = {
+  T: { kind: "tree", jpName: "木", enName: "TREE" },
   H: { kind: "snake", jpName: "ヘビ", enName: "SNAKE" },
   R: { kind: "stone", jpName: "石", enName: "STONE" },
   Q: { kind: "shield", jpName: "盾", enName: "SHIELD" },
@@ -61,6 +65,31 @@ const SIGHT_DIRECTIONS: Readonly<Record<string, HeroDirection>> = {
 
 const stageSpecs: readonly StageSpec[] = [
   {
+    id: "tree-single-letter",
+    title: "木の一字",
+    hint: "まずは一文字。木をスイッチまで押す。",
+    width: 7,
+    height: 5,
+    mapRows: [
+      "#######",
+      "#.....#",
+      "#P.T.D#",
+      "###s###",
+      "#######",
+    ],
+    playerFacing: "down",
+    doorIsGoal: true,
+    solutionActions: [
+      "right",
+      "slash-jp",
+      "up",
+      "right",
+      "down",
+      "right",
+      "right",
+    ],
+  },
+  {
     id: "snake-line",
     title: "へびの ならべかた",
     hint: "短い名前なら、届く。長い名前なら、つかえる？",
@@ -77,6 +106,36 @@ const stageSpecs: readonly StageSpec[] = [
     ],
     playerFacing: "down",
     solutionActions: ["slash-jp", "right", "right", ...repeat("down", 4)],
+  },
+  {
+    id: "snake-two-jobs",
+    title: "ヘビの半分",
+    hint: "同じ名前の二文字を、スイッチと溝へ分ける。",
+    width: 8,
+    height: 7,
+    mapRows: [
+      "########",
+      "#......#",
+      "#P.H...#",
+      "###.#≈##",
+      "###.#.##",
+      "###s#D##",
+      "########",
+    ],
+    playerFacing: "down",
+    doorIsGoal: true,
+    solutionActions: [
+      "right",
+      "slash-jp",
+      "up",
+      "right",
+      ...repeat("down", 3),
+      ...repeat("up", 2),
+      "right",
+      "up",
+      "right",
+      ...repeat("down", 4),
+    ],
   },
   {
     id: "stone-space",
@@ -151,28 +210,28 @@ const stageSpecs: readonly StageSpec[] = [
   {
     id: "six-letter-rampart",
     title: "六文字の城壁",
-    hint: "一振りで、防壁と遠くのスイッチをつなぐ。",
+    hint: "一歩で向きを決め、六文字を縦の城壁にする。",
     width: 9,
-    height: 9,
+    height: 10,
     mapRows: [
       "#########",
-      "#....P..#",
-      "#....K..#",
-      "#>......#",
+      "#.....P.#",
+      "#.......#",
+      "#.....K.#",
       "#>......#",
       "#>.....D#",
+      "#>......#",
       "#.......#",
-      "#....s.G#",
+      "#.....s.#",
       "#########",
     ],
-    playerFacing: "down",
+    playerFacing: "up",
+    doorIsGoal: true,
     solutionActions: [
+      "down",
       "slash-en",
       "right",
-      ...repeat("down", 4),
-      "right",
-      "down",
-      "down",
+      ...repeat("down", 3),
     ],
   },
   {
@@ -344,16 +403,65 @@ const stageSpecs: readonly StageSpec[] = [
       "right",
     ],
   },
+  {
+    id: "meeting-knight-rampart",
+    title: "六文字の城壁",
+    hint: "騎士を誘導し、名前の長さで三本の視線と扉を攻略する。",
+    width: 15,
+    height: 15,
+    mapRows: [
+      "###############",
+      "#.............#",
+      "#.###.....###.#",
+      "#.#.........#.#",
+      "#.#.........#.#",
+      "#.#.........#.#",
+      "#.#.P.......#.#",
+      "#.#.........#.#",
+      "#.............#",
+      "#>............#",
+      "#>.........D..#",
+      "#>K...........#",
+      "#######.#######",
+      "#######S#######",
+      "###############",
+    ],
+    playerFacing: "down",
+    chaserSymbols: ["K"],
+    doorIsGoal: true,
+    alwaysShowTargetName: true,
+    horizontalBlockStopsChaser: true,
+    solutionActions: [
+      "up",
+      "up",
+      "down",
+      "down",
+      "right",
+      "right",
+      "right",
+      "down",
+      "slash-en",
+      "right",
+      "down",
+      "down",
+      "down",
+      "right",
+      "right",
+      "right",
+    ],
+  },
 ];
 
 export const trialStages: readonly TrialStageDefinition[] =
   stageSpecs.map(createStage);
 
+export const defaultTrialStageIndex = trialStages.length - 1;
+
 export function validateTrialStages(
   stages: readonly TrialStageDefinition[] = trialStages,
 ): void {
-  if (stages.length !== 10) {
-    throw new Error(`Expected 10 trial stages, received ${stages.length}.`);
+  if (stages.length !== 13) {
+    throw new Error(`Expected 13 selectable stages, received ${stages.length}.`);
   }
 
   for (const stage of stages) {
@@ -373,6 +481,13 @@ export function validateTrialStages(
     if (stage.cameraAreas.length !== 1) {
       throw new Error(`${stage.id}: exactly one camera area is required.`);
     }
+  }
+
+  const meeting = stages.find(
+    (stage) => stage.id === "meeting-knight-rampart",
+  );
+  if (!meeting || meeting.width !== 15 || meeting.height !== 15) {
+    throw new Error("The 15 by 15 meeting stage is missing.");
   }
 }
 
@@ -403,6 +518,7 @@ function createStage(spec: StageSpec, index: number): TrialStageDefinition {
   const doorPositions: GridPoint[] = [];
   const goals: GridPoint[] = [];
   const fusionPositions: GridPoint[] = [];
+  const pitPositions: GridPoint[] = [];
   const chasers = new Set(spec.chaserSymbols ?? []);
   const unknowns = new Set(spec.unknownSymbols ?? []);
 
@@ -410,7 +526,13 @@ function createStage(spec: StageSpec, index: number): TrialStageDefinition {
     const terrainRow: TrialTerrain[] = [];
     Array.from(row).forEach((symbol, x) => {
       const position = { x, y };
-      terrainRow.push(symbol === "#" || symbol === "X" ? "wall" : "floor");
+      terrainRow.push(
+        symbol === "#" || symbol === "X"
+          ? "wall"
+          : symbol === "≈"
+            ? "pit"
+            : "floor",
+      );
 
       if (symbol === "P") {
         if (playerStart) throw new Error(`${spec.id}: multiple players.`);
@@ -434,7 +556,7 @@ function createStage(spec: StageSpec, index: number): TrialStageDefinition {
           position,
           direction: SIGHT_DIRECTIONS[symbol],
         });
-      } else if (symbol === "s") {
+      } else if (symbol === "s" || symbol === "S") {
         switches.push(createSwitch(spec.id, position));
       } else if (symbol === "D") {
         doorPositions.push(position);
@@ -442,6 +564,8 @@ function createStage(spec: StageSpec, index: number): TrialStageDefinition {
         goals.push(position);
       } else if (symbol === "X") {
         fusionPositions.push(position);
+      } else if (symbol === "≈") {
+        pitPositions.push(position);
       } else if (symbol !== "." && symbol !== "#") {
         throw new Error(`${spec.id}: unsupported map symbol "${symbol}".`);
       }
@@ -484,6 +608,14 @@ function createStage(spec: StageSpec, index: number): TrialStageDefinition {
         : switches.map((entry) => entry.id),
     requiredConditionIds,
   }));
+  if (spec.doorIsGoal) {
+    goals.push(...doorPositions.map((position) => ({ ...position })));
+  }
+
+  const pits = pitPositions.map((position, pitIndex) => ({
+    id: `${spec.id}-pit-${pitIndex}`,
+    position,
+  }));
 
   return {
     id: spec.id,
@@ -496,12 +628,17 @@ function createStage(spec: StageSpec, index: number): TrialStageDefinition {
     terrain,
     playerStart,
     playerFacing: spec.playerFacing,
+    horizontalBlockStopsChaser:
+      spec.horizontalBlockStopsChaser ?? false,
     objects,
     sightEnemies,
     switches,
     doors,
     goals,
     fusionWalls,
+    pits,
+    displayTargetEntityId:
+      spec.alwaysShowTargetName ? objects[0]?.id : undefined,
     cameraAreas: [createCameraArea(spec.id, width, height)],
     solutionActions: spec.solutionActions,
   };
@@ -527,11 +664,14 @@ function createCameraArea(
       width: size,
       height: size,
     },
-    transitionMs: 180,
+    transitionMs: stageId === "meeting-knight-rampart" ? 0 : 180,
   };
 }
 
-function createSwitch(stageId: string, position: GridPoint): SwitchDefinition {
+function createSwitch(
+  stageId: string,
+  position: GridPoint,
+): SwitchDefinition {
   return {
     id: `${stageId}-switch-${position.x}-${position.y}`,
     position,

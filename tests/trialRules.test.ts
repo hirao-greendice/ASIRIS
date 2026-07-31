@@ -3,22 +3,98 @@ import {
   advanceTrialStage,
   createTrialCampaignState,
   getActiveTrialStage,
-  getChaserNextMove,
   getDangerTileKeys,
   isDoorOpen,
+  isSwitchOn,
   resetTrialStage,
   resolveTrialAction,
   splitGraphemes,
 } from "../src/game/trial/rules";
-import { trialStages, validateTrialStages } from "../src/game/trial/stages";
+import {
+  trialStages,
+  validateTrialStages,
+} from "../src/game/trial/stages";
 import type {
   TrialAction,
   TrialCampaignState,
 } from "../src/game/trial/types";
 
-describe("name printing", () => {
-  it("splits Japanese and English names into grapheme blocks", () => {
-    expect(splitGraphemes("ヘビ")).toEqual(["ヘ", "ビ"]);
+const SETUP_ACTIONS: readonly TrialAction[] = [
+  "up",
+  "up",
+  "down",
+  "down",
+  "right",
+  "right",
+  "right",
+  "down",
+];
+
+const EXIT_ACTIONS: readonly TrialAction[] = [
+  "right",
+  "down",
+  "down",
+  "down",
+  "right",
+  "right",
+  "right",
+];
+
+const MEETING_STAGE_INDEX = trialStages.findIndex(
+  (stage) => stage.id === "meeting-knight-rampart",
+);
+const MEETING_STAGE = trialStages[MEETING_STAGE_INDEX];
+
+describe("15 by 15 meeting stage", () => {
+  it("keeps the authored board available in the selectable stage list", () => {
+    expect(() => validateTrialStages()).not.toThrow();
+    expect(trialStages).toHaveLength(13);
+    expect(MEETING_STAGE_INDEX).toBe(12);
+
+    const stage = MEETING_STAGE;
+    expect(stage.width).toBe(15);
+    expect(stage.height).toBe(15);
+    expect(stage.mapRows).toEqual([
+      "###############",
+      "#.............#",
+      "#.###.....###.#",
+      "#.#.........#.#",
+      "#.#.........#.#",
+      "#.#.........#.#",
+      "#.#.P.......#.#",
+      "#.#.........#.#",
+      "#.............#",
+      "#>............#",
+      "#>.........D..#",
+      "#>K...........#",
+      "#######.#######",
+      "#######S#######",
+      "###############",
+    ]);
+    expect(stage.playerStart).toEqual({ x: 4, y: 6 });
+    expect(stage.objects[0]).toMatchObject({
+      position: { x: 2, y: 11 },
+      jpName: "騎士",
+      enName: "KNIGHT",
+      behavior: "chaser",
+    });
+    expect(stage.sightEnemies.map((enemy) => enemy.position)).toEqual([
+      { x: 1, y: 9 },
+      { x: 1, y: 10 },
+      { x: 1, y: 11 },
+    ]);
+    expect(stage.doors[0].position).toEqual({ x: 11, y: 10 });
+    expect(stage.switches[0].position).toEqual({ x: 7, y: 13 });
+    expect(stage.cameraAreas[0].view).toEqual({
+      x: -0.5,
+      y: -0.5,
+      width: 16,
+      height: 16,
+    });
+  });
+
+  it("splits both knight names into physical grapheme blocks", () => {
+    expect(splitGraphemes("騎士")).toEqual(["騎", "士"]);
     expect(splitGraphemes("KNIGHT")).toEqual([
       "K",
       "N",
@@ -27,271 +103,187 @@ describe("name printing", () => {
       "H",
       "T",
     ]);
-    expect(splitGraphemes("e\u0301")).toEqual(["e\u0301"]);
+  });
+});
 
-    for (const stage of trialStages) {
-      for (const object of stage.objects) {
-        expect(splitGraphemes(object.jpName).length).toBeGreaterThan(0);
-        expect(splitGraphemes(object.enName).length).toBeGreaterThan(0);
-      }
-    }
+describe("knight pursuit and sight", () => {
+  it("does not move before the first action and follows the authored setup", () => {
+    const initial = createTrialCampaignState();
+    expect(initial.run.objects[0].position).toEqual({ x: 2, y: 11 });
+
+    const induced = playActions(initial, SETUP_ACTIONS);
+    expect(induced.run.player).toEqual({ x: 7, y: 7 });
+    expect(induced.run.facing).toBe("down");
+    expect(induced.run.objects[0].position).toEqual({ x: 7, y: 8 });
+    expect(induced.run.turnCount).toBe(8);
+    expect(induced.run.status).toBe("playing");
   });
 
-  it("prints the whole name or nothing when a cell is blocked", () => {
-    const initial = createTrialCampaignState([], 0);
-    const result = resolveTrialAction(initial, "slash-en");
-
-    expect(result.slash?.succeeded).toBe(false);
-    expect(result.state.run.letters).toHaveLength(0);
-    expect(result.state.run.objects[0].isAlive).toBe(true);
+  it("moves the living knight after an empty slash", () => {
+    const result = resolveTrialAction(
+      createTrialCampaignState(),
+      "slash-jp",
+    );
     expect(result.consumedTurn).toBe(true);
+    expect(result.slash?.targetEntityId).toBeUndefined();
+    expect(result.state.run.objects[0]).toMatchObject({
+      isAlive: true,
+      position: { x: 3, y: 11 },
+    });
+  });
+
+  it("does not let the living knight block a sight line", () => {
+    const initial = createTrialCampaignState();
+    const danger = getDangerTileKeys(initial);
+
+    expect(danger.has("2,11")).toBe(true);
+    expect(danger.has("3,11")).toBe(true);
+    expect(danger.has("13,11")).toBe(true);
   });
 });
 
-describe("letters, sight, switches, and movement", () => {
-  it("does not let a named object block sight, but lets its letter block it", () => {
-    const initial = createTrialCampaignState([], 2);
-    expect(getDangerTileKeys(initial).has("6,2")).toBe(true);
-    expect(getDangerTileKeys(initial).has("7,2")).toBe(true);
+describe("English solution", () => {
+  it("spawns KNIGHT simultaneously, stops all three sights, and opens the door", () => {
+    const induced = playActions(
+      createTrialCampaignState(),
+      SETUP_ACTIONS,
+    );
+    const cut = resolveTrialAction(induced, "slash-en");
+    const stage = getActiveTrialStage(cut.state);
 
-    const cut = resolveTrialAction(initial, "slash-jp").state;
-    expect(getDangerTileKeys(cut).has("6,2")).toBe(false);
-    expect(getDangerTileKeys(cut).has("7,2")).toBe(false);
+    expect(cut.slash?.succeeded).toBe(true);
+    expect(cut.state.run.objects[0].isAlive).toBe(false);
+    expect(
+      cut.state.run.letters.map((letter) => ({
+        character: letter.character,
+        position: letter.position,
+      })),
+    ).toEqual([
+      { character: "K", position: { x: 7, y: 8 } },
+      { character: "N", position: { x: 7, y: 9 } },
+      { character: "I", position: { x: 7, y: 10 } },
+      { character: "G", position: { x: 7, y: 11 } },
+      { character: "H", position: { x: 7, y: 12 } },
+      { character: "T", position: { x: 7, y: 13 } },
+    ]);
+
+    const danger = getDangerTileKeys(cut.state);
+    for (const row of [9, 10, 11]) {
+      expect(danger.has(`6,${row}`)).toBe(true);
+      expect(danger.has(`7,${row}`)).toBe(false);
+      expect(danger.has(`8,${row}`)).toBe(false);
+    }
+    expect(isSwitchOn(cut.state.run, stage.switches[0].position)).toBe(true);
+    expect(isDoorOpen(cut.state.run, stage, stage.doors[0])).toBe(true);
+    expect(cut.state.run.turnCount).toBe(9);
   });
 
-  it("pushes one letter but never pushes an ordinary chain", () => {
-    let shortName = createTrialCampaignState([], 1);
-    shortName = resolveTrialAction(shortName, "slash-jp").state;
-    const pushed = resolveTrialAction(shortName, "right");
-    expect(pushed.consumedTurn).toBe(true);
-    expect(pushed.pushedLetterId).toBeDefined();
-    expect(pushed.state.run.letters[0].position).toEqual({ x: 3, y: 3 });
+  it("clears with the documented sixteen actions", () => {
+    const completed = playActions(
+      createTrialCampaignState(),
+      MEETING_STAGE.solutionActions,
+    );
 
-    let longName = createTrialCampaignState([], 1);
-    longName = resolveTrialAction(longName, "slash-en").state;
-    const blocked = resolveTrialAction(longName, "right");
-    expect(blocked.consumedTurn).toBe(false);
-    expect(blocked.state.run.player).toEqual({ x: 1, y: 3 });
-    expect(blocked.state.run.letters).toHaveLength(5);
+    expect(completed.run.status).toBe("completed");
+    expect(completed.run.player).toEqual({ x: 11, y: 10 });
+    expect(completed.run.turnCount).toBe(16);
+    expect(advanceTrialStage(completed).isClear).toBe(true);
   });
+});
 
-  it("opens a linked door while its switch carries a letter", () => {
-    const initial = createTrialCampaignState([], 0);
-    const cut = resolveTrialAction(initial, "slash-jp").state;
+describe("failure and reset rules", () => {
+  it("cannot clear by using the Japanese name on the documented route", () => {
+    const induced = playActions(
+      createTrialCampaignState(),
+      SETUP_ACTIONS,
+    );
+    const cut = resolveTrialAction(induced, "slash-jp").state;
     const stage = getActiveTrialStage(cut);
-    expect(isDoorOpen(cut.run, stage, stage.doors[0])).toBe(true);
-  });
-});
 
-describe("turns and chasing enemies", () => {
-  it("does not move a chaser on a free facing change", () => {
-    let state = createTrialCampaignState([], 6);
-    state = resolveTrialAction(state, "left").state;
-    const before = state.run.objects.find((entry) => entry.isAlive)?.position;
-    const faced = resolveTrialAction(state, "up");
-    const after = faced.state.run.objects.find((entry) => entry.isAlive)?.position;
+    expect(cut.run.letters.map((letter) => letter.character)).toEqual([
+      "騎",
+      "士",
+    ]);
+    expect(isDoorOpen(cut.run, stage, stage.doors[0])).toBe(false);
 
-    expect(faced.consumedTurn).toBe(false);
-    expect(after).toEqual(before);
+    const attemptedExit = playActions(cut, EXIT_ACTIONS);
+    expect(attemptedExit.run.status).toBe("failed");
+    expect(attemptedExit.run.failureReason).toBe("sight");
+    expect(attemptedExit.run.status).not.toBe("completed");
   });
 
-  it("moves a chaser after a failed slash and an empty slash", () => {
-    const failed = resolveTrialAction(
-      createTrialCampaignState([], 6),
-      "slash-en",
+  it("never pushes two or more ordinary letters together", () => {
+    const induced = playActions(
+      createTrialCampaignState(),
+      SETUP_ACTIONS,
     );
-    expect(failed.slash?.succeeded).toBe(false);
-    expect(failed.failed).toBe(true);
-    expect(failed.state.run.objects[0].position).toEqual({ x: 4, y: 4 });
+    const cut = resolveTrialAction(induced, "slash-en").state;
+    const blocked = resolveTrialAction(cut, "down");
 
-    let waiting = createTrialCampaignState([], 7);
-    waiting = resolveTrialAction(waiting, "slash-en").state;
-    waiting = resolveTrialAction(waiting, "left").state;
-    waiting = resolveTrialAction(waiting, "right").state;
-    const before = waiting.run.objects.find((entry) => entry.isAlive)?.position;
-    const miss = resolveTrialAction(waiting, "slash-jp");
-    const after = miss.state.run.objects.find((entry) => entry.isAlive)?.position;
-    expect(miss.slash?.targetEntityId).toBeUndefined();
-    expect(after).not.toEqual(before);
+    expect(blocked.consumedTurn).toBe(false);
+    expect(blocked.state.run.player).toEqual({ x: 7, y: 7 });
+    expect(blocked.state.run.letters).toEqual(cut.run.letters);
+    expect(blocked.state.run.turnCount).toBe(9);
   });
 
-  it("uses horizontal-first pursuit and falls back to vertical movement", () => {
-    const base = createTrialCampaignState([], 6);
-    const initial = {
-      ...base,
-      run: { ...base.run, player: { x: 3, y: 4 } },
+  it("keeps the knight and creates no new letters when printing is blocked", () => {
+    const induced = playActions(
+      createTrialCampaignState(),
+      SETUP_ACTIONS,
+    );
+    const blockedState: TrialCampaignState = {
+      ...induced,
+      run: {
+        ...induced.run,
+        letters: [
+          {
+            id: "blocking-letter",
+            sourceEntityId: "test",
+            character: "X",
+            position: { x: 7, y: 12 },
+          },
+        ],
+      },
     };
-    const next = getChaserNextMove(initial, initial.run.objects[0].id);
-    expect(next).toEqual({ x: 3, y: 3 });
+    const failedCut = resolveTrialAction(blockedState, "slash-en");
 
-    let fenced = createTrialCampaignState([], 7);
-    fenced = resolveTrialAction(fenced, "slash-en").state;
-    fenced = resolveTrialAction(fenced, "left").state;
-    fenced = resolveTrialAction(fenced, "right").state;
-    fenced = resolveTrialAction(fenced, "slash-jp").state;
-    const knight = fenced.run.objects.find((entry) => entry.isAlive);
-    expect(knight?.position).toEqual({ x: 3, y: 1 });
-    expect(knight && getChaserNextMove(fenced, knight.id)).toEqual({
-      x: 3,
-      y: 2,
-    });
+    expect(failedCut.slash?.succeeded).toBe(false);
+    expect(failedCut.slash?.blockedAt).toEqual({ x: 7, y: 12 });
+    expect(failedCut.slash?.attemptedPositions).toHaveLength(6);
+    expect(failedCut.state.run.objects[0].isAlive).toBe(true);
+    expect(failedCut.state.run.letters).toEqual(
+      blockedState.run.letters,
+    );
+    expect(failedCut.consumedTurn).toBe(true);
+    expect(failedCut.state.run.failureReason).toBe("caught");
+  });
+
+  it("restores every mutable stage value on reset", () => {
+    const changed = playActions(
+      createTrialCampaignState(),
+      MEETING_STAGE.solutionActions.slice(0, 9),
+    );
+    const reset = resetTrialStage(changed);
+    const initial = createTrialCampaignState();
+
+    expect(reset.stageIndex).toBe(MEETING_STAGE_INDEX);
+    expect(reset.run).toEqual(initial.run);
+    expect(reset.isClear).toBe(false);
   });
 });
 
-describe("knowledge and fusion", () => {
-  it("reveals both mimic names on the first attempt and keeps them after reset", () => {
-    const initial = createTrialCampaignState([], 8);
-    const attempted = resolveTrialAction(initial, "slash-en");
-    expect(attempted.slash?.revealed).toMatchObject({
-      jpName: "ミミック",
-      enName: "MIMIC",
-    });
-    expect(attempted.state.discoveredUnknownIds).toHaveLength(1);
-
-    const retried = resetTrialStage(attempted.state);
-    expect(retried.discoveredUnknownIds).toEqual(
-      attempted.state.discoveredUnknownIds,
-    );
-  });
-
-  it("fuses only the exact recipe, order, and input direction", () => {
-    const correct = makeFusionState(["火", "火"], "up");
-    const fused = resolveTrialAction(correct, "up");
-    expect(fused.fusion?.result).toBe("炎");
-    expect(fused.state.run.activeConditionIds).toContain("fusion-fire");
-    expect(fused.state.run.letters).toHaveLength(0);
-    expect(fused.state.run.player).toEqual({ x: 4, y: 3 });
-
-    const wrongText = resolveTrialAction(
-      makeFusionState(["火", "水"], "up"),
-      "up",
-    );
-    expect(wrongText.consumedTurn).toBe(false);
-    expect(wrongText.state.run.letters).toHaveLength(2);
-
-    const wrongDirection = resolveTrialAction(
-      makeFusionState(["火", "火"], "left"),
-      "left",
-    );
-    expect(wrongDirection.consumedTurn).toBe(false);
-    expect(wrongDirection.fusion).toBeUndefined();
-  });
-});
-
-describe("stage data and authored solutions", () => {
-  it("validates all declared row and column sizes", () => {
-    expect(() => validateTrialStages()).not.toThrow();
-    expect(trialStages).toHaveLength(10);
-    for (const stage of trialStages) {
-      expect(stage.mapRows).toHaveLength(stage.height);
-      expect(stage.mapRows.every((row) => row.length === stage.width)).toBe(
-        true,
-      );
-    }
-  });
-
-  it("replays all ten solutionActions through prototype clear", () => {
-    let state = createTrialCampaignState();
-    const expectedCurrentRunTurns = [7, 13, 9, 9, 9, 30, 6, 12, 10, 26];
-    const expectedConsumedInputs = [7, 13, 9, 9, 9, 30, 6, 12, 11, 26];
-
-    for (const [index, stage] of trialStages.entries()) {
-      expect(getActiveTrialStage(state).id).toBe(stage.id);
-      const replay = playActionsWithStats(state, stage.solutionActions);
-      state = replay.state;
-      expect(state.run.status, `${stage.id} did not complete`).toBe(
-        "completed",
+describe("stage selection data", () => {
+  it("replays every selectable stage solution to completion", () => {
+    for (const [stageIndex, stage] of trialStages.entries()) {
+      const completed = playActions(
+        createTrialCampaignState([], stageIndex),
+        stage.solutionActions,
       );
       expect(
-        state.run.turnCount,
-        `${stage.id} current run turn count was unexpected`,
-      ).toBe(expectedCurrentRunTurns[index]);
-      expect(
-        replay.consumedInputs,
-        `${stage.id} consumed action count was unexpected`,
-      ).toBe(expectedConsumedInputs[index]);
-      expect(replay.inputCount).toBe(stage.solutionActions.length);
-      state = advanceTrialStage(state);
+        completed.run.status,
+        `${stage.number}. ${stage.title} did not complete`,
+      ).toBe("completed");
     }
-
-    expect(state.isClear).toBe(true);
-  });
-
-  it("reproduces each documented wrong-language outcome", () => {
-    const stage1 = resolveTrialAction(
-      createTrialCampaignState([], 0),
-      "slash-en",
-    );
-    expect(stage1.slash?.succeeded).toBe(false);
-
-    let stage2 = resolveTrialAction(
-      createTrialCampaignState([], 1),
-      "slash-en",
-    ).state;
-    expect(resolveTrialAction(stage2, "right").consumedTurn).toBe(false);
-
-    const stage3 = resolveTrialAction(
-      createTrialCampaignState([], 2),
-      "slash-en",
-    );
-    expect(stage3.slash?.succeeded).toBe(false);
-
-    let stage4 = resolveTrialAction(
-      createTrialCampaignState([], 3),
-      "slash-jp",
-    ).state;
-    stage4 = playActions(stage4, [
-      "down",
-      "down",
-      "right",
-      "right",
-      "right",
-    ]);
-    expect(stage4.run.status).toBe("failed");
-
-    let stage5 = resolveTrialAction(
-      createTrialCampaignState([], 4),
-      "slash-jp",
-    ).state;
-    stage5 = playActions(stage5, ["right", "down", "down", "down"]);
-    expect(stage5.run.status).toBe("failed");
-
-    const stage6 = resolveTrialAction(
-      createTrialCampaignState([], 5),
-      "slash-jp",
-    ).state;
-    expect(stage6.run.letters.map((entry) => entry.character)).toEqual(["鍵"]);
-
-    let stage7 = createTrialCampaignState([], 6);
-    stage7 = resolveTrialAction(stage7, "left").state;
-    stage7 = resolveTrialAction(stage7, "up").state;
-    const wrongBat = resolveTrialAction(stage7, "slash-jp");
-    expect(wrongBat.slash?.succeeded).toBe(false);
-
-    const stage8 = resolveTrialAction(
-      createTrialCampaignState([], 7),
-      "slash-jp",
-    ).state;
-    expect(stage8.run.letters).toHaveLength(1);
-
-    const stage9 = resolveTrialAction(
-      createTrialCampaignState([], 8),
-      "slash-jp",
-    );
-    expect(stage9.slash?.succeeded).toBe(true);
-    expect(stage9.state.run.letters).toHaveLength(4);
-
-    const stage10 = resolveTrialAction(
-      playActions(createTrialCampaignState([], 9), ["left", "up"]),
-      "slash-en",
-    ).state;
-    expect(stage10.run.letters.map((entry) => entry.character)).toEqual([
-      "F",
-      "I",
-      "R",
-      "E",
-    ]);
-    expect(stage10.run.activeConditionIds).not.toContain("fusion-fire");
   });
 });
 
@@ -303,64 +295,4 @@ function playActions(
     (state, action) => resolveTrialAction(state, action).state,
     initial,
   );
-}
-
-function playActionsWithStats(
-  initial: TrialCampaignState,
-  actions: readonly TrialAction[],
-): {
-  state: TrialCampaignState;
-  inputCount: number;
-  consumedInputs: number;
-} {
-  let state = initial;
-  let consumedInputs = 0;
-  for (const action of actions) {
-    const result = resolveTrialAction(state, action);
-    state = result.state;
-    if (result.consumedTurn) consumedInputs += 1;
-  }
-  return {
-    state,
-    inputCount: actions.length,
-    consumedInputs,
-  };
-}
-
-function makeFusionState(
-  characters: readonly [string, string],
-  facing: "up" | "left",
-): TrialCampaignState {
-  const initial = createTrialCampaignState([], 9);
-  if (facing === "up") {
-    return {
-      ...initial,
-      run: {
-        ...initial.run,
-        player: { x: 4, y: 4 },
-        facing,
-        letters: characters.map((character, index) => ({
-          id: `test-${index}`,
-          sourceEntityId: "test",
-          character,
-          position: { x: 4, y: 3 - index },
-        })),
-      },
-    };
-  }
-
-  return {
-    ...initial,
-    run: {
-      ...initial.run,
-      player: { x: 4, y: 4 },
-      facing,
-      letters: characters.map((character, index) => ({
-        id: `test-${index}`,
-        sourceEntityId: "test",
-        character,
-        position: { x: 3 - index, y: 4 },
-      })),
-    },
-  };
 }

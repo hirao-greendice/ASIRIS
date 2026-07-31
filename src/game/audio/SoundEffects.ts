@@ -58,6 +58,10 @@ export class SoundEffects {
     ]);
   }
 
+  drop(): void {
+    this.playTone(310, 0.16, 0.055, "triangle", -230);
+  }
+
   destroy(): void {
     if (this.context) {
       void this.context.close();

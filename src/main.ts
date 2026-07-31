@@ -120,6 +120,8 @@ async function startTrialGame(): Promise<() => void> {
     document.querySelectorAll<HTMLButtonElement>("[data-control]");
   const stageLabel =
     document.querySelector<HTMLElement>("[data-stage-label]");
+  const stageSelect =
+    document.querySelector<HTMLSelectElement>("[data-stage-select]");
   const hintLabel =
     document.querySelector<HTMLElement>("[data-goal-label]");
   const nameLabel =
@@ -127,7 +129,14 @@ async function startTrialGame(): Promise<() => void> {
   const turnLabel =
     document.querySelector<HTMLElement>("[data-turn-label]");
 
-  if (!canvas || !stageLabel || !hintLabel || !nameLabel || !turnLabel) {
+  if (
+    !canvas ||
+    !stageLabel ||
+    !stageSelect ||
+    !hintLabel ||
+    !nameLabel ||
+    !turnLabel
+  ) {
     throw new Error("Trial game canvas or HUD was not found.");
   }
 
@@ -137,6 +146,7 @@ async function startTrialGame(): Promise<() => void> {
   const assets = await loadGameAssets();
   const game = new TrialGame(canvas, input, assets, {
     stageLabel,
+    stageSelect,
     hintLabel,
     nameLabel,
     turnLabel,

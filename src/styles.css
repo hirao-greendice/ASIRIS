@@ -106,6 +106,39 @@ button {
   white-space: nowrap;
 }
 
+.stage-selector-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.stage-selector-row .stage-label {
+  flex: 0 0 auto;
+}
+
+.stage-select {
+  min-width: 0;
+  width: clamp(132px, 25vw, 230px);
+  height: 24px;
+  padding: 2px 24px 2px 7px;
+  overflow: hidden;
+  border: 1px solid rgba(199, 165, 204, 0.52);
+  border-radius: 2px;
+  color: #e9ddec;
+  background: #211c24;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.stage-select:hover,
+.stage-select:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
 .name-label {
   grid-column: 1 / -1;
   margin: 0;
@@ -277,8 +310,9 @@ button {
   }
 
   .game-title-row {
+    position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     gap: 2px;
   }
 
@@ -290,6 +324,17 @@ button {
     font-size: 9px;
   }
 
+  .stage-selector-row {
+    grid-column: 1 / -1;
+    gap: 4px;
+  }
+
+  .stage-select {
+    height: 30px;
+    padding-left: 5px;
+    font-size: 9px;
+  }
+
   .name-label {
     min-height: 18px;
     padding: 1px 4px;
@@ -297,6 +342,9 @@ button {
   }
 
   .turn-label {
+    position: absolute;
+    top: 2px;
+    right: 0;
     font-size: 8px;
   }
 

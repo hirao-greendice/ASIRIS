@@ -15,11 +15,20 @@
       <header class="game-header">
         <div class="game-title-row">
           <h1>ミリしらソード</h1>
-          <p class="stage-label" data-stage-label>
-            STAGE 1 / 10　「へびの ならべかた」
-          </p>
+          <div class="stage-selector-row">
+            <p class="stage-label" data-stage-label>
+              STAGE 13 / 13
+            </p>
+            <select
+              class="stage-select"
+              data-stage-select
+              aria-label="遊ぶステージを選択"
+            >
+              <option value="12">13　六文字の城壁　[15×15]</option>
+            </select>
+          </div>
           <p class="turn-label" data-turn-label>TURN 0</p>
-          <p class="name-label" data-sword-label>正面：—</p>
+          <p class="name-label" data-sword-label>対象：騎士 / KNIGHT</p>
         </div>
         <div class="game-header-tools">
           <p class="keyboard-guide" aria-label="キーボード操作">
@@ -39,7 +48,7 @@
           <a class="editor-link" href="?editor=1" data-editor-link>EDITOR</a>
         </div>
         <p class="goal-label" data-goal-label>
-          短い名前なら、届く。長い名前なら、つかえる？
+          騎士を誘導し、名前の長さで三本の視線と扉を攻略する。
         </p>
       </header>
 
