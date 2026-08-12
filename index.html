@@ -1,88 +1,267 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ja">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-    <meta name="theme-color" content="#241f38" />
-    <title>きりもじ - Stage 01</title>
-    <link rel="stylesheet" href="styles.css" />
-  </head>
-  <body>
-    <main class="game-shell" aria-label="きりもじ パズルゲーム">
-      <section class="stage-panel" aria-label="ステージエリア">
-        <div class="board-frame">
-          <div id="board" class="board" role="grid" aria-label="7かける8マスのステージ"></div>
-        </div>
-      </section>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ミリしらソード コア検証</title>
+<style>
+  :root{
+    --frame:#C9A6D2; --frameEdge:#A583B0;
+    --floor:#FAF6EF; --grid:#EDE5D8;
+    --wall:#8C8279; --wallTop:#5F574F;
+    --yellow:#F5C542; --yellowTop:#C9A02F;
+    --hero:#6E7FD0; --heroEdge:#3E4890;
+    --sword:#3A3540;
+    --ink:#2E2A33; --muted:#6B6274;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; display:flex; justify-content:center;
+    background:#EFE9F2; color:var(--ink);
+    font-family:"Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;
+    padding:16px;
+  }
+  .shell{width:100%; max-width:640px}
+  .stage{
+    background:var(--frame); border:2px solid var(--frameEdge);
+    border-radius:10px; padding:14px;
+  }
+  canvas{display:block; width:100%; height:auto; image-rendering:pixelated}
+  .readout{
+    margin-top:12px; background:#fff; border-radius:8px; padding:10px 12px;
+    font-size:13px; line-height:1.7;
+  }
+  .readout b{font-weight:700}
+  .big{font-size:15px}
+  .keys{
+    margin-top:12px; font-size:12.5px; color:var(--muted); line-height:1.9;
+  }
+  kbd{
+    background:#fff; border:1px solid #C9C1D0; border-bottom-width:2px;
+    border-radius:4px; padding:1px 6px; font-size:12px; font-family:inherit;
+  }
+  .note{margin-top:10px; font-size:12px; color:var(--muted); line-height:1.7}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="stage"><canvas id="c"></canvas></div>
 
-      <section class="control-panel" aria-label="操作UI">
-        <div class="inventory-panel">
-          <span class="inventory-heading">文字</span>
-          <div id="inventory" class="inventory" aria-label="所持文字一覧"></div>
-        </div>
+  <div class="readout">
+    <div class="big" id="line1">剣を出すと、ここに何が起きたか出ます</div>
+    <div id="line2" style="color:var(--muted)"></div>
+  </div>
 
-        <p id="message" class="message" aria-live="polite">十字キーで、オブジェクトのとなりへ</p>
+  <div class="keys">
+    <kbd>←</kbd><kbd>→</kbd> 歩く（向きも変わる）　<kbd>↑</kbd><kbd>↓</kbd> 剣の向きだけ変える<br>
+    <kbd>X</kbd> 剣を出す　<kbd>Z</kbd> 1手もどす　<kbd>R</kbd> やり直し　<kbd>G</kbd> 落下の速さを切替
+  </div>
 
-        <div class="controller">
-          <div class="dpad" aria-label="十字キー">
-            <button class="control-button dpad-up" type="button" data-direction="up" aria-label="上へ移動">
-              <img src="アセット 1.png" alt="" draggable="false" />
-            </button>
-            <button class="control-button dpad-left" type="button" data-direction="left" aria-label="左へ移動">
-              <img src="アセット 1.png" alt="" draggable="false" />
-            </button>
-            <div class="dpad-center" aria-hidden="true"></div>
-            <button class="control-button dpad-right" type="button" data-direction="right" aria-label="右へ移動">
-              <img src="アセット 1.png" alt="" draggable="false" />
-            </button>
-            <button class="control-button dpad-down" type="button" data-direction="down" aria-label="下へ移動">
-              <img src="アセット 1.png" alt="" draggable="false" />
-            </button>
-          </div>
+  <div class="note">
+    黄色い床は、勇者は乗れるが剣は通り抜ける。ここで下に剣を出しても持ち上がらない。
+    「下斬りはジャンプ」ではなく「止められた分だけ押される」であることの確認用。
+  </div>
+</div>
 
-          <div class="action-buttons" aria-label="アクションボタン">
-            <button id="button-a" class="action-button button-a" type="button" aria-label="Aボタン">
-              <img src="アセット 2.png" alt="" draggable="false" />
-            </button>
-            <button id="button-b" class="action-button button-b" type="button" aria-label="Bボタン 切るまたは調べる">
-              <img src="アセット 3.png" alt="" draggable="false" />
-            </button>
-          </div>
-        </div>
-      </section>
-    </main>
+<script>
+// ---- 地形 ----------------------------------------------------------------
+// '.' = 空間 / '#' = 灰ブロック（勇者も剣も通れない） / 'Y' = 黄ブロック（剣だけ通る）
+// '@' = 勇者の初期位置
+const LEVEL = [
+  "################",
+  "#..............#",
+  "#....######....#",
+  "#..............#",
+  "#.........#....#",
+  "#.........#....#",
+  "#..###....#.YYY#",
+  "#....#....#....#",
+  "#....#....#....#",
+  "#@...#.....#...#",
+  "####.###..##...#",
+  "################",
+];
 
-    <div id="puzzle-modal" class="modal" aria-hidden="true">
-      <div class="modal-backdrop"></div>
-      <section class="puzzle-card" role="dialog" aria-modal="true" aria-labelledby="puzzle-title">
-        <button id="close-puzzle" class="close-button" type="button" aria-label="ナゾを閉じる">×</button>
-        <p class="puzzle-kicker">OBJECT PUZZLE</p>
-        <div id="puzzle-icon" class="puzzle-icon" aria-hidden="true"></div>
-        <h2 id="puzzle-title">木のナゾ</h2>
-        <p id="puzzle-clue" class="puzzle-clue"></p>
+const SWORD_LEN = 3;
+const TILE = 34;
+const COLS = LEVEL[0].length, ROWS = LEVEL.length;
 
-        <div id="answer-slots" class="answer-slots" aria-label="回答欄"></div>
-        <p class="answer-caption">文字をタップして こたえをつくろう</p>
-        <div id="puzzle-inventory" class="puzzle-inventory" aria-label="回答に使える文字"></div>
+const DIRS = {
+  right:[ 1, 0], left:[-1, 0], down:[ 0, 1], up:[ 0,-1]
+};
 
-        <div class="puzzle-actions">
-          <button id="delete-letter" class="secondary-button" type="button">1文字もどす</button>
-          <button id="submit-answer" class="submit-button" type="button">B　こたえる</button>
-        </div>
-        <p id="puzzle-feedback" class="puzzle-feedback" aria-live="assertive"></p>
-      </section>
-    </div>
+// ---- 状態 ----------------------------------------------------------------
+let grid, hero, facing, history, instantFall = false;
+let sword = [], swordUntil = 0;
 
-    <div id="clear-screen" class="clear-screen" aria-hidden="true">
-      <div class="clear-card" role="dialog" aria-modal="true" aria-labelledby="clear-title">
-        <p class="clear-kicker">STAGE 01</p>
-        <h2 id="clear-title">CLEAR!</h2>
-        <p>ことばをつないで<br />扉をひらいた！</p>
-        <div id="clear-letters" class="clear-letters" aria-label="集めた文字"></div>
-        <button id="restart-button" class="restart-button" type="button">もういちど遊ぶ</button>
-      </div>
-    </div>
+function reset(){
+  grid = LEVEL.map(r => r.split(""));
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    if(grid[y][x] === "@"){ hero = {x,y}; grid[y][x] = "."; }
+  }
+  facing = "right";
+  history = [];
+  sword = [];
+  say("剣を出すと、ここに何が起きたか出ます", "");
+  settle();
+}
 
-    <script src="game.js"></script>
-  </body>
+const at = (x,y) => (x<0||y<0||x>=COLS||y>=ROWS) ? "#" : grid[y][x];
+const blocksSword = (x,y) => at(x,y) === "#";           // 黄は通り抜ける
+const blocksHero  = (x,y) => at(x,y) === "#" || at(x,y) === "Y";
+
+function snapshot(){
+  history.push({x:hero.x, y:hero.y, facing});
+  if(history.length > 300) history.shift();
+}
+
+// ---- 唯一のルール --------------------------------------------------------
+// 剣は必ず SWORD_LEN マス伸びきろうとする。
+// 伸びきれなかった分だけ、勇者が剣と反対方向へ押される。
+function swing(){
+  snapshot();
+  const [dx,dy] = DIRS[facing];
+
+  let reach = 0;
+  for(let i=1;i<=SWORD_LEN;i++){
+    if(blocksSword(hero.x+dx*i, hero.y+dy*i)) break;
+    reach++;
+  }
+  const want = SWORD_LEN - reach;
+
+  let pushed = 0;
+  for(let i=0;i<want;i++){
+    const nx = hero.x-dx, ny = hero.y-dy;
+    if(blocksHero(nx,ny)) break;             // 押される先が壁なら、行けるとこまで
+    hero.x = nx; hero.y = ny; pushed++;
+  }
+
+  // 表示用：押されたあとの位置から剣を引き直す
+  sword = [];
+  for(let i=1;i<=SWORD_LEN;i++){
+    const nx = hero.x+dx*i, ny = hero.y+dy*i;
+    if(blocksSword(nx,ny)) break;
+    sword.push({x:nx,y:ny});
+  }
+  swordUntil = performance.now() + 260;
+
+  const jp = {right:"右", left:"左", down:"下", up:"上"}[facing];
+  const back = {right:"左", left:"右", down:"上", up:"下"}[facing];
+  say(
+    `${jp}へ剣を出した → 伸びたのは ${reach} マス、止められたのは ${SWORD_LEN-reach} マス`,
+    pushed === 0
+      ? "剣が伸びきったので、勇者は動かない"
+      : `そのぶん勇者が${back}へ ${pushed} マス押された` +
+        (pushed < want ? "（途中で壁に当たって止まった）" : "")
+  );
+  settle();
+}
+
+function walk(dir){
+  snapshot();
+  facing = dir;
+  const [dx] = DIRS[dir];
+  if(!blocksHero(hero.x+dx, hero.y)) hero.x += dx;
+  settle();
+}
+
+function face(dir){ snapshot(); facing = dir; settle(); }
+
+// ---- 重力 ----------------------------------------------------------------
+// 既定は1手に1マス。空中でも行動できるので、押し上げが意味を持つ。
+// G キーで「着地まで一気に落ちる」に切り替えられる。
+function settle(){
+  if(instantFall){
+    while(!blocksHero(hero.x, hero.y+1)) hero.y++;
+  } else {
+    if(!blocksHero(hero.x, hero.y+1)) hero.y++;
+  }
+}
+
+function undo(){
+  const s = history.pop();
+  if(!s) return;
+  hero = {x:s.x, y:s.y}; facing = s.facing; sword = [];
+  say("1手もどした", "");
+}
+
+function say(a,b){
+  document.getElementById("line1").textContent = a;
+  document.getElementById("line2").textContent = b;
+}
+
+// ---- 描画 ----------------------------------------------------------------
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+cv.width = COLS*TILE*DPR; cv.height = ROWS*TILE*DPR;
+cv.style.aspectRatio = `${COLS} / ${ROWS}`;
+ctx.scale(DPR, DPR);
+
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+function draw(){
+  const T = TILE;
+  ctx.fillStyle = css("--floor");
+  ctx.fillRect(0,0,COLS*T,ROWS*T);
+
+  ctx.strokeStyle = css("--grid"); ctx.lineWidth = 1;
+  for(let x=1;x<COLS;x++){ ctx.beginPath(); ctx.moveTo(x*T,0); ctx.lineTo(x*T,ROWS*T); ctx.stroke(); }
+  for(let y=1;y<ROWS;y++){ ctx.beginPath(); ctx.moveTo(0,y*T); ctx.lineTo(COLS*T,y*T); ctx.stroke(); }
+
+  for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++){
+    const t = grid[y][x];
+    if(t === "#" || t === "Y"){
+      ctx.fillStyle = css(t === "#" ? "--wall" : "--yellow");
+      ctx.fillRect(x*T, y*T, T, T);
+      ctx.fillStyle = css(t === "#" ? "--wallTop" : "--yellowTop");
+      ctx.fillRect(x*T, y*T, T, 5);
+    }
+  }
+
+  if(performance.now() < swordUntil && sword.length){
+    ctx.fillStyle = css("--sword");
+    for(const s of sword){
+      const horiz = facing === "left" || facing === "right";
+      if(horiz) ctx.fillRect(s.x*T, s.y*T + T/2 - 4, T, 8);
+      else      ctx.fillRect(s.x*T + T/2 - 4, s.y*T, 8, T);
+    }
+  }
+
+  const hx = hero.x*T, hy = hero.y*T;
+  ctx.fillStyle = css("--hero");
+  ctx.strokeStyle = css("--heroEdge"); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.roundRect(hx+5, hy+4, T-10, T-8, 6);
+  ctx.fill(); ctx.stroke();
+
+  // 向きの目印
+  const [dx,dy] = DIRS[facing];
+  ctx.fillStyle = css("--heroEdge");
+  ctx.beginPath();
+  ctx.arc(hx + T/2 + dx*8, hy + T/2 + dy*8, 3.5, 0, Math.PI*2);
+  ctx.fill();
+
+  requestAnimationFrame(draw);
+}
+
+// ---- 入力 ----------------------------------------------------------------
+addEventListener("keydown", e => {
+  const k = e.key.toLowerCase();
+  if(["arrowleft","arrowright","arrowup","arrowdown"," "].includes(k)) e.preventDefault();
+  if(k === "arrowleft")  walk("left");
+  else if(k === "arrowright") walk("right");
+  else if(k === "arrowup")    face("up");
+  else if(k === "arrowdown")  face("down");
+  else if(k === "x") swing();
+  else if(k === "z") undo();
+  else if(k === "r") reset();
+  else if(k === "g"){
+    instantFall = !instantFall;
+    say(instantFall ? "落下：着地まで一気に" : "落下：1手に1マス（空中でも行動できる）", "");
+  }
+});
+
+reset();
+draw();
+</script>
+</body>
 </html>
