@@ -81,6 +81,15 @@ button {
   font-size: clamp(0.55rem, 1.5vmin, 0.75rem);
 }
 
+.stage-object--hole {
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  border: 3px double;
+  font-size: clamp(0.8rem, 2.6vmin, 1.3rem);
+  font-weight: 700;
+}
+
 .stage-object--entity,
 .stage-object--player {
   position: relative;
@@ -106,6 +115,11 @@ button {
   transform-origin: 50% 0.62em;
 }
 
+.stage-object--player {
+  z-index: 5;
+  pointer-events: none;
+}
+
 .stage-object--button {
   z-index: 4;
   display: grid;
@@ -127,19 +141,6 @@ button {
 .stage-object--button:focus-visible {
   outline: 3px double;
   outline-offset: 2px;
-}
-
-.stage-object--status {
-  z-index: 3;
-  display: grid;
-  align-items: center;
-  border-block: 1px solid;
-  padding-inline: 0.35rem;
-  overflow: hidden;
-  font-size: clamp(0.52rem, 1.65vmin, 0.82rem);
-  text-align: center;
-  white-space: nowrap;
-  text-overflow: ellipsis;
 }
 
 .stage-object__symbol {

@@ -113,6 +113,8 @@ try {
     return {
       cells: document.querySelectorAll(".board-cell").length,
       stageId: stage.dataset.stageId,
+      hasPlayZone: Boolean(document.querySelector('[data-object-id="play-zone"]')),
+      hasStatusText: Boolean(document.querySelector("#stage-status")),
       ratio: bounds.width / bounds.height,
       allObjectsInside: boardObjects.every((object) => {
         const box = object.getBoundingClientRect();
@@ -126,21 +128,64 @@ try {
 
   assert(initial.cells === 12 * 21, `セル数が${initial.cells}です。`);
   assert(initial.stageId === "knowledge-01", "初期ステージが正しくありません。");
+  assert(initial.hasPlayZone, "中央プレイエリアの見た目が消えています。");
+  assert(!initial.hasStatusText, "十字ボタン上の説明テキストが残っています。");
   assert(Math.abs(initial.ratio - 12 / 21) < 0.002, `盤面比率が${initial.ratio}です。`);
   assert(initial.allObjectsInside, "盤面外にはみ出しているオブジェクトがあります。");
   assert(!initial.horizontalOverflow && !initial.verticalOverflow, "ページに不要なスクロールがあります。");
 
-  const result = await evaluate(`(() => {
+  const result = await evaluate(`(async () => {
     const click = (action) => document.querySelector('[data-action="' + action + '"]').click();
-    click("move-right");
-    click("move-right");
-    click("move-right");
+    const wait = (milliseconds) => new Promise((resolveWait) => setTimeout(resolveWait, milliseconds));
+
+    for (let index = 0; index < 6; index += 1) click("move-up");
+    const yOutsidePlayZone = document.querySelector("#player").dataset.y;
+    for (let index = 0; index < 6; index += 1) click("move-down");
+
+    for (let index = 0; index < 5; index += 1) click("move-down");
+    click("move-down");
+    const yOnUpButton = document.querySelector("#player").dataset.y;
+    await wait(BUTTON_STEP_DELAY + 60);
+    const yAfterAutomaticMove = document.querySelector("#player").dataset.y;
+
+    click("move-down");
+    pressDirection("test:opposite", "down");
+    await wait(BUTTON_STEP_DELAY * 2 + 60);
+    const yWhileConflicting = document.querySelector("#player").dataset.y;
+    const playerBounds = document.querySelector("#player").getBoundingClientRect();
+    const clickableUnderPlayer = document
+      .elementFromPoint(playerBounds.x + playerBounds.width / 2, playerBounds.y + playerBounds.height / 2)
+      ?.closest("[data-action]")?.dataset.action;
+    releaseDirection("test:opposite");
+    await wait(BUTTON_STEP_DELAY + 60);
+    const yAfterConflictReleased = document.querySelector("#player").dataset.y;
+
+    for (let index = 0; index < 5; index += 1) click("move-up");
+    click("move-left");
+    for (let index = 0; index < 8; index += 1) click("move-down");
+    const xOnLeftButton = document.querySelector("#player").dataset.x;
+    await wait(BUTTON_STEP_DELAY + 60);
+    const xAfterFirstButtonStep = document.querySelector("#player").dataset.x;
+    await wait(BUTTON_STEP_DELAY + 60);
+    const xAfterLeavingButton = document.querySelector("#player").dataset.x;
+
+    for (let index = 0; index < 8; index += 1) click("move-up");
+    for (let index = 0; index < 6; index += 1) click("move-right");
     const playerAfterMove = document.querySelector("#player").dataset.x;
     click("interact");
     const knowledgeRemoved = !document.querySelector('[data-object-id="knowledge-01"]');
-    const unlockMessage = document.querySelector("#stage-status").textContent;
+    const unlockMessage = state.message;
     click("next-stage");
     return {
+      yOutsidePlayZone,
+      yOnUpButton,
+      yAfterAutomaticMove,
+      yWhileConflicting,
+      clickableUnderPlayer,
+      yAfterConflictReleased,
+      xOnLeftButton,
+      xAfterFirstButtonStep,
+      xAfterLeavingButton,
       playerAfterMove,
       knowledgeRemoved,
       unlockMessage,
@@ -148,6 +193,15 @@ try {
     };
   })()`);
 
+  assert(result.yOutsidePlayZone === "2", "中央プレイエリアの外へ移動できません。");
+  assert(result.yOnUpButton === "14", "上ボタンへ乗れません。");
+  assert(result.yAfterAutomaticMove === "13", "上ボタンへ乗った直後に自動移動しません。");
+  assert(result.yWhileConflicting === "14", "異なる入力中に矢印ボタンが動いてしまいます。");
+  assert(result.clickableUnderPlayer === "move-up", "勇者の下の矢印ボタンを操作できません。");
+  assert(result.yAfterConflictReleased === "13", "異なる入力を離したあと矢印ボタンが再開しません。");
+  assert(result.xOnLeftButton === "2", "左ボタンへ乗れません。");
+  assert(result.xAfterFirstButtonStep === "1", "左ボタン上で移動が継続しません。");
+  assert(result.xAfterLeavingButton === "0", "左ボタンの外まで自動移動しません。");
   assert(result.playerAfterMove === "6", "右移動が正しく反映されません。");
   assert(result.knowledgeRemoved, "知識を取得できません。");
   assert(result.unlockMessage.includes("ステージ2"), "解放メッセージが表示されません。");

@@ -10,6 +10,8 @@ const DIRECTIONS = Object.freeze({
   left: Object.freeze({ x: -1, y: 0, angle: "270deg", label: "左" }),
 });
 
+const BUTTON_STEP_DELAY = 160;
+
 const rect = (x, y, width, height) => {
   const cells = [];
   for (let row = y; row < y + height; row += 1) {
@@ -74,15 +76,6 @@ const SCREEN_OBJECTS = Object.freeze([
     height: 2,
     symbol: "?",
     label: "ヒント",
-  },
-  {
-    id: "status",
-    kind: "status",
-    x: 1,
-    y: 13,
-    width: 10,
-    height: 1,
-    label: "矢印で移動し、知識のマスでAを押してください",
   },
   {
     id: "move-up",
@@ -168,6 +161,7 @@ const STAGES = Object.freeze([
     number: 1,
     position: { x: 0, y: 0 },
     start: { x: 3, y: 8, facing: "right" },
+    holes: [],
     floor: [
       ...rect(2, 7, 4, 3),
       ...line(6, 8, 5),
@@ -183,6 +177,7 @@ const STAGES = Object.freeze([
     number: 2,
     position: { x: 1, y: 0 },
     start: { x: 2, y: 6, facing: "down" },
+    holes: [],
     floor: [
       ...line(2, 6, 7),
       ...line(8, 7, 3, "down"),
@@ -199,6 +194,7 @@ const STAGES = Object.freeze([
     number: 3,
     position: { x: 2, y: 0 },
     start: { x: 2, y: 8, facing: "right" },
+    holes: [],
     floor: [
       ...rect(2, 7, 3, 3),
       ...line(5, 8, 6),
@@ -219,6 +215,9 @@ const state = {
   history: [],
   collectedKnowledge: new Set(),
   message: "",
+  manualInputSources: new Map(),
+  buttonMotion: null,
+  buttonMotionTimer: null,
 };
 
 const cellKey = (x, y) => `${x},${y}`;
@@ -262,22 +261,27 @@ function validateStageData() {
 
     assertArea({ id: `${stage.id}:start`, ...stage.start });
     stage.floor.forEach((cell, index) => assertArea({ id: `${stage.id}:floor-${index}`, ...cell }));
+    stage.holes.forEach((cell, index) => assertArea({ id: `${stage.id}:hole-${index}`, ...cell }));
     stage.objects.forEach(assertArea);
 
-    const walkable = new Set(stage.floor.map((cell) => cellKey(cell.x, cell.y)));
-    if (walkable.size !== stage.floor.length) {
+    const floorCells = new Set(stage.floor.map((cell) => cellKey(cell.x, cell.y)));
+    const holeCells = new Set(stage.holes.map((cell) => cellKey(cell.x, cell.y)));
+    if (floorCells.size !== stage.floor.length) {
       throw new Error(`${stage.id} の床座標が重複しています。`);
     }
-    if (!walkable.has(cellKey(stage.start.x, stage.start.y))) {
-      throw new Error(`${stage.id} の開始位置には床が必要です。`);
+    if (holeCells.size !== stage.holes.length) {
+      throw new Error(`${stage.id} の穴座標が重複しています。`);
+    }
+    if (holeCells.has(cellKey(stage.start.x, stage.start.y))) {
+      throw new Error(`${stage.id} の開始位置を穴にはできません。`);
     }
 
     const objectIds = new Set();
     stage.objects.forEach((object) => {
       if (objectIds.has(object.id)) throw new Error(`${stage.id} のオブジェクトID ${object.id} が重複しています。`);
       objectIds.add(object.id);
-      if (!walkable.has(cellKey(object.x, object.y))) {
-        throw new Error(`${stage.id} の ${object.id} には床が必要です。`);
+      if (holeCells.has(cellKey(object.x, object.y))) {
+        throw new Error(`${stage.id} の ${object.id} を穴には配置できません。`);
       }
     });
   });
@@ -343,13 +347,7 @@ function createScreenObject(object) {
     element.append(createLabeledContent(object));
   } else {
     element.textContent = object.label;
-    if (object.kind === "status") {
-      element.id = "stage-status";
-      element.setAttribute("role", "status");
-      element.setAttribute("aria-live", "polite");
-    } else {
-      element.setAttribute("aria-hidden", "true");
-    }
+    element.setAttribute("aria-hidden", "true");
   }
   return element;
 }
@@ -362,6 +360,17 @@ function createFloorTile(cell, index) {
   tile.setAttribute("aria-hidden", "true");
   setGridArea(tile, cell);
   return tile;
+}
+
+function createHole(cell, index) {
+  const hole = document.createElement("div");
+  hole.className = "stage-object stage-object--hole";
+  hole.dataset.objectId = `hole-${index}`;
+  hole.dataset.objectKind = "hole";
+  hole.textContent = "×";
+  hole.setAttribute("aria-label", "穴");
+  setGridArea(hole, cell);
+  return hole;
 }
 
 function createEntity(object) {
@@ -401,6 +410,7 @@ function render() {
 
   SCREEN_OBJECTS.forEach((object) => fragment.append(createScreenObject(object)));
   stage.floor.forEach((cell, index) => fragment.append(createFloorTile(cell, index)));
+  stage.holes.forEach((cell, index) => fragment.append(createHole(cell, index)));
   stage.objects
     .filter((object) => !state.collectedKnowledge.has(object.id))
     .forEach((object) => fragment.append(createEntity(object)));
@@ -414,12 +424,12 @@ function render() {
   const number = stageElement.querySelector('[data-object-id="stage-number"] .stage-object__symbol');
   number.textContent = String(stage.number);
 
-  const status = stageElement.querySelector("#stage-status");
-  status.textContent = state.message;
 }
 
 function loadStage(index, message = "") {
   const stage = STAGES[index];
+  clearButtonMotion();
+  state.manualInputSources.clear();
   state.currentStageIndex = index;
   state.player = { ...stage.start };
   state.history = [];
@@ -432,29 +442,200 @@ function remember() {
   if (state.history.length > 200) state.history.shift();
 }
 
-function move(directionName) {
+function containsCell(object, x, y) {
+  return x >= object.x
+    && y >= object.y
+    && x < object.x + (object.width ?? 1)
+    && y < object.y + (object.height ?? 1);
+}
+
+function directionFromAction(action) {
+  if (!action?.startsWith("move-")) return null;
+  const directionName = action.slice(5);
+  return DIRECTIONS[directionName] ? directionName : null;
+}
+
+function directionButtonAt(x, y) {
+  const button = SCREEN_OBJECTS.find((object) => (
+    object.kind === "button"
+    && directionFromAction(object.action)
+    && containsCell(object, x, y)
+  ));
+  return button ? directionFromAction(button.action) : null;
+}
+
+function isWalkable(x, y) {
+  if (x < 0 || y < 0 || x >= BOARD.columns || y >= BOARD.rows) return false;
+  return !currentStage().holes.some((hole) => hole.x === x && hole.y === y);
+}
+
+function moveOneCell(directionName) {
   const direction = DIRECTIONS[directionName];
-  const stage = currentStage();
-  const next = {
-    x: state.player.x + direction.x,
-    y: state.player.y + direction.y,
+  const nextX = state.player.x + direction.x;
+  const nextY = state.player.y + direction.y;
+  if (!isWalkable(nextX, nextY)) return false;
+  state.player.x = nextX;
+  state.player.y = nextY;
+  state.player.facing = directionName;
+  return true;
+}
+
+function activeManualDirections() {
+  const ignoredSources = state.buttonMotion?.ignoredSources ?? new Set();
+  return new Set(
+    [...state.manualInputSources.entries()]
+      .filter(([sourceId]) => !ignoredSources.has(sourceId))
+      .map(([, directionName]) => directionName),
+  );
+}
+
+function hasDirectionConflict(tileDirection) {
+  const directions = activeManualDirections();
+  directions.add(tileDirection);
+  return directions.size > 1;
+}
+
+function clearButtonMotion() {
+  if (state.buttonMotionTimer !== null) {
+    window.clearTimeout(state.buttonMotionTimer);
+  }
+  state.buttonMotionTimer = null;
+  state.buttonMotion = null;
+}
+
+function scheduleButtonMotion() {
+  if (!state.buttonMotion || state.buttonMotionTimer !== null) return;
+  state.buttonMotionTimer = window.setTimeout(() => {
+    state.buttonMotionTimer = null;
+    advanceButtonMotion();
+  }, BUTTON_STEP_DELAY);
+}
+
+function beginButtonMotion(ignoreCurrentSources) {
+  const tileDirection = directionButtonAt(state.player.x, state.player.y);
+  if (!tileDirection) {
+    clearButtonMotion();
+    return;
+  }
+
+  state.buttonMotion = {
+    direction: tileDirection,
+    ignoredSources: ignoreCurrentSources
+      ? new Set(state.manualInputSources.keys())
+      : new Set(),
   };
-  const walkable = new Set(stage.floor.map((cell) => cellKey(cell.x, cell.y)));
+  scheduleButtonMotion();
+}
+
+function advanceButtonMotion() {
+  const tileDirection = directionButtonAt(state.player.x, state.player.y);
+  if (!tileDirection) {
+    clearButtonMotion();
+    return;
+  }
+
+  if (!state.buttonMotion) beginButtonMotion(false);
+  state.buttonMotion.direction = tileDirection;
+
+  if (hasDirectionConflict(tileDirection)) {
+    state.message = "異なる方向が同時に押されているため停止中";
+    scheduleButtonMotion();
+    return;
+  }
+
+  if (!moveOneCell(tileDirection)) {
+    state.message = `${DIRECTIONS[tileDirection].label}ボタンの先へ進めません`;
+    clearButtonMotion();
+    render();
+    return;
+  }
+
+  state.message = `${DIRECTIONS[tileDirection].label}ボタンで移動中`;
+  render();
+
+  const nextTileDirection = directionButtonAt(state.player.x, state.player.y);
+  if (!nextTileDirection) {
+    clearButtonMotion();
+    return;
+  }
+  state.buttonMotion.direction = nextTileDirection;
+  scheduleButtonMotion();
+}
+
+function performManualMove(directionName) {
+  const tileDirection = directionButtonAt(state.player.x, state.player.y);
+
+  if (tileDirection) {
+    if (!state.buttonMotion) beginButtonMotion(false);
+    if (hasDirectionConflict(tileDirection)) {
+      state.message = "異なる方向が同時に押されているため停止中";
+      render();
+    } else {
+      scheduleButtonMotion();
+    }
+    return;
+  }
+
+  if (activeManualDirections().size > 1) {
+    state.message = "異なる方向が同時に押されているため停止中";
+    render();
+    return;
+  }
 
   remember();
   state.player.facing = directionName;
 
-  if (walkable.has(cellKey(next.x, next.y))) {
-    state.player.x = next.x;
-    state.player.y = next.y;
-    state.message = `${direction.label}へ移動しました`;
+  if (moveOneCell(directionName)) {
+    state.message = `${DIRECTIONS[directionName].label}へ移動しました`;
   } else {
-    state.message = "そこには床がありません";
+    state.message = "その先は盤面外または穴です";
   }
   render();
+
+  if (directionButtonAt(state.player.x, state.player.y)) {
+    // このマスへ入るために使った入力は消費済み。着地後の相殺には使いません。
+    beginButtonMotion(true);
+  }
+}
+
+function pressDirection(sourceId, directionName) {
+  if (!DIRECTIONS[directionName] || state.manualInputSources.has(sourceId)) return;
+
+  const directionWasAlreadyPressed = [...state.manualInputSources.values()].includes(directionName);
+  state.manualInputSources.set(sourceId, directionName);
+
+  if (!directionWasAlreadyPressed || directionButtonAt(state.player.x, state.player.y)) {
+    performManualMove(directionName);
+  }
+}
+
+function releaseDirection(sourceId) {
+  if (!state.manualInputSources.has(sourceId)) return;
+  state.manualInputSources.delete(sourceId);
+  state.buttonMotion?.ignoredSources.delete(sourceId);
+
+  if (directionButtonAt(state.player.x, state.player.y)) {
+    if (state.buttonMotionTimer !== null) window.clearTimeout(state.buttonMotionTimer);
+    state.buttonMotionTimer = null;
+    if (!state.buttonMotion) beginButtonMotion(false);
+    else scheduleButtonMotion();
+  }
+}
+
+let virtualInputId = 0;
+function tapDirection(directionName) {
+  virtualInputId += 1;
+  const sourceId = `tap:${virtualInputId}`;
+  pressDirection(sourceId, directionName);
+  releaseDirection(sourceId);
+}
+
+function move(directionName) {
+  tapDirection(directionName);
 }
 
 function undo() {
+  clearButtonMotion();
   const previous = state.history.pop();
   if (!previous) {
     state.message = "これ以上戻せません";
@@ -548,19 +729,54 @@ function runAction(action) {
   actions[action]?.();
 }
 
+stageElement.addEventListener("pointerdown", (event) => {
+  const button = event.target.closest("[data-action]");
+  const directionName = directionFromAction(button?.dataset.action);
+  if (!directionName) return;
+
+  event.preventDefault();
+  stageElement.setPointerCapture?.(event.pointerId);
+  pressDirection(`pointer:${event.pointerId}`, directionName);
+});
+
+function releasePointerDirection(event) {
+  releaseDirection(`pointer:${event.pointerId}`);
+}
+
+window.addEventListener("pointerup", releasePointerDirection);
+window.addEventListener("pointercancel", releasePointerDirection);
+
 stageElement.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
-  if (button) runAction(button.dataset.action);
+  if (!button) return;
+
+  const directionName = directionFromAction(button.dataset.action);
+  if (directionName) {
+    // マウス・タッチはpointerdownで処理済み。キーボード操作とelement.click()だけ補います。
+    if (event.detail === 0) tapDirection(directionName);
+    return;
+  }
+  runAction(button.dataset.action);
 });
 
 window.addEventListener("keydown", (event) => {
+  const keyDirections = {
+    ArrowUp: "up",
+    ArrowRight: "right",
+    ArrowDown: "down",
+    ArrowLeft: "left",
+  };
+  const directionName = keyDirections[event.key];
+  if (directionName) {
+    event.preventDefault();
+    if (!event.repeat) pressDirection(`key:${event.key}`, directionName);
+    return;
+  }
+
   if (event.repeat) return;
+  if (["Enter", " "].includes(event.key) && event.target.closest?.("button")) return;
 
   const keyActions = {
-    ArrowUp: "move-up",
-    ArrowRight: "move-right",
-    ArrowDown: "move-down",
-    ArrowLeft: "move-left",
     a: "interact",
     A: "interact",
     Enter: "interact",
@@ -574,6 +790,17 @@ window.addEventListener("keydown", (event) => {
   if (!action) return;
   event.preventDefault();
   runAction(action);
+});
+
+window.addEventListener("keyup", (event) => {
+  if (["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"].includes(event.key)) {
+    releaseDirection(`key:${event.key}`);
+  }
+});
+
+window.addEventListener("blur", () => {
+  const sourceIds = [...state.manualInputSources.keys()];
+  sourceIds.forEach(releaseDirection);
 });
 
 validateStageData();
