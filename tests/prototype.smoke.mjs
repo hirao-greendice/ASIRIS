@@ -118,6 +118,8 @@ try {
     const stage = document.querySelector("#stage");
     const bounds = stage.getBoundingClientRect();
     const playZone = document.querySelector('[data-object-id="play-zone"]');
+    const firstSea = document.querySelector('[data-object-id="sea-1-3"]');
+    const nextSea = document.querySelector('[data-object-id="sea-2-3"]');
     const panelTop = document.querySelector('[data-object-id="panel-0-0"]');
     const panelBelow = document.querySelector('[data-object-id="panel-0-1"]');
     const exposedPanel = document.querySelector('[data-object-id="panel-1-2"]');
@@ -133,6 +135,7 @@ try {
     return {
       cells: document.querySelectorAll(".board-cell").length,
       panels: document.querySelectorAll('[data-object-kind="panel"]').length,
+      seas: document.querySelectorAll('[data-object-kind="sea"]').length,
       stageId: stage.dataset.stageId,
       playZoneSize: [playZone.dataset.width, playZone.dataset.height],
       stageNumberSize: [stageNumber.dataset.width, stageNumber.dataset.height],
@@ -146,8 +149,14 @@ try {
       landFitsGridWidth: Math.abs(land.getBoundingClientRect().width - cellWidth) < 0.02,
       panelFitsGridWidth: Math.abs(exposedPanel.getBoundingClientRect().width - cellWidth) < 0.02,
       lowerPanelIsAbove: Number(getComputedStyle(panelBelow).zIndex) > Number(getComputedStyle(panelTop).zIndex),
-      seaColor: getComputedStyle(playZone).backgroundColor,
-      seaImage: getComputedStyle(playZone).backgroundImage,
+      seaColor: getComputedStyle(firstSea).backgroundColor,
+      seaImage: getComputedStyle(firstSea).backgroundImage,
+      seaImageSize: getComputedStyle(firstSea).backgroundSize,
+      seaFitsGrid: Math.abs(firstSea.getBoundingClientRect().width - cellWidth) < 0.02
+        && Math.abs(firstSea.getBoundingClientRect().height - cellHeight) < 0.02,
+      seaTilesTouch: Math.abs(
+        firstSea.getBoundingClientRect().right - nextSea.getBoundingClientRect().left
+      ) < 0.02,
       panelColor: getComputedStyle(panelBelow).backgroundColor,
       landColor: getComputedStyle(document.querySelector('[data-object-kind="floor"].has-tile-below')).backgroundColor,
       panelSide: getComputedStyle(exposedPanel).backgroundImage,
@@ -167,6 +176,7 @@ try {
 
   assert(initial.cells === 0, "グリッド線用の補助セルが残っています。");
   assert(initial.panels === 12 * 21 - 10 * 10, `パネル数が${initial.panels}です。`);
+  assert(initial.seas === 10 * 10, `Seaタイル数が${initial.seas}です。`);
   assert(initial.stageId === "knowledge-01", "初期ステージが正しくありません。");
   assert(initial.playZoneSize.join("x") === "10x10", "中央プレイエリアが10×10ではありません。");
   assert(initial.stageNumberSize.join("x") === "4x2", "ステージ番号が4×2ではありません。");
@@ -180,6 +190,9 @@ try {
   assert(initial.lowerPanelIsAbove, "下の行のPanelが前面になっていません。");
   assert(initial.seaColor === "rgb(46, 167, 224)", `Seaの色が素材と違います: ${initial.seaColor}`);
   assert(initial.seaImage.includes("sea.webp"), "Sea素材が使われていません。");
+  assert(initial.seaImageSize === "100% 100%", `Sea素材が拡大されています: ${initial.seaImageSize}`);
+  assert(initial.seaFitsGrid, "Sea素材が1マスの大きさに収まっていません。");
+  assert(initial.seaTilesTouch, "Seaタイル同士の位置がずれています。");
   assert(initial.panelColor === "rgb(199, 165, 204)", `Panelの色が素材と違います: ${initial.panelColor}`);
   assert(initial.landColor === "rgb(57, 181, 74)", `Landの色が素材と違います: ${initial.landColor}`);
   assert(initial.panelSide.includes("rgb(138, 114, 143)"), "Panel側面の色が素材と違います。");
@@ -212,7 +225,80 @@ try {
     const returnedPose = document.querySelector("#player").dataset.pose;
     const returnedSprite = document.querySelector("#player .player-sprite").src;
 
-    for (let index = 0; index < 8; index += 1) click("move-right");
+    const resetPlayer = () => {
+      clearDirectionRepeats();
+      state.manualInputSources.clear();
+      state.pressedControlSources.clear();
+      state.player = { ...currentStage().start };
+      state.history = [];
+      state.lastRenderedPlayer = null;
+      render();
+    };
+
+    resetPlayer();
+    pressDirection("test:short-hold", "right");
+    await wait(HOLD_REPEAT_DELAY - 80);
+    releaseDirection("test:short-hold");
+    const shortHoldX = state.player.x;
+    await wait(HOLD_REPEAT_INTERVAL + 60);
+    const shortHoldSettledX = state.player.x;
+
+    resetPlayer();
+    pressDirection("test:long-hold", "right");
+    const longHoldImmediateX = state.player.x;
+    await wait(HOLD_REPEAT_DELAY + HOLD_REPEAT_INTERVAL * 2 + 50);
+    releaseDirection("test:long-hold");
+    const longHoldX = state.player.x;
+    await wait(HOLD_REPEAT_INTERVAL + 60);
+    const longHoldSettledX = state.player.x;
+
+    resetPlayer();
+
+    const directionPointerId = 71;
+    document.querySelector('[data-action="move-right"]').dispatchEvent(new PointerEvent("pointerdown", {
+      bubbles: true,
+      pointerId: directionPointerId,
+      button: 0,
+      buttons: 1,
+    }));
+    const directionInputDark = document.querySelector('[data-action="move-right"]')
+      .classList.contains("is-input-pressed");
+    window.dispatchEvent(new PointerEvent("pointerup", {
+      bubbles: true,
+      pointerId: directionPointerId,
+      button: 0,
+      buttons: 0,
+    }));
+    const directionInputReleased = !document.querySelector('[data-action="move-right"]')
+      .classList.contains("is-input-pressed");
+
+    const actionPointerId = 72;
+    document.querySelector('[data-action="interact"]').dispatchEvent(new PointerEvent("pointerdown", {
+      bubbles: true,
+      pointerId: actionPointerId,
+      button: 0,
+      buttons: 1,
+    }));
+    const actionInputDark = document.querySelector('[data-action="interact"]')
+      .classList.contains("is-input-pressed");
+    window.dispatchEvent(new PointerEvent("pointerup", {
+      bubbles: true,
+      pointerId: actionPointerId,
+      button: 0,
+      buttons: 0,
+    }));
+    const actionInputReleased = !document.querySelector('[data-action="interact"]')
+      .classList.contains("is-input-pressed");
+
+    resetPlayer();
+
+    click("move-right");
+    const movementAnimation = document.querySelector("#player").getAnimations()[0];
+    const movementFrames = movementAnimation?.effect.getKeyframes() ?? [];
+    const smoothMoveStarted = movementFrames.length === 2
+      && movementFrames[0].transform !== movementFrames[1].transform
+      && movementAnimation.effect.getTiming().duration === PLAYER_MOVE_DURATION;
+    for (let index = 0; index < 7; index += 1) click("move-right");
     const xOutsidePlayZone = document.querySelector("#player").dataset.x;
     for (let index = 0; index < 6; index += 1) click("move-up");
     const yInTopUiArea = document.querySelector("#player").dataset.y;
@@ -243,6 +329,16 @@ try {
       attackSprite,
       returnedPose,
       returnedSprite,
+      shortHoldX,
+      shortHoldSettledX,
+      longHoldImmediateX,
+      longHoldX,
+      longHoldSettledX,
+      directionInputDark,
+      directionInputReleased,
+      actionInputDark,
+      actionInputReleased,
+      smoothMoveStarted,
       xOutsidePlayZone,
       yInTopUiArea,
       topUiSprite,
@@ -263,6 +359,16 @@ try {
   assert(result.attackSprite.includes("hero-right-attack.png"), "向いている方向の攻撃画像になりません。");
   assert(result.returnedPose === "idle", "攻撃後に通常状態へ戻りません。");
   assert(result.returnedSprite.includes("hero-right-idle.png"), "攻撃後に通常画像へ戻りません。");
+  assert(result.shortHoldX === 4, "短い押下の初回1マスが反映されません。");
+  assert(result.shortHoldSettledX === 4, "短い押下で複数マス移動してしまいます。");
+  assert(result.longHoldImmediateX === 4, "長押し開始時に最初の1マスを移動しません。");
+  assert(result.longHoldX === 7, `長押しの反復位置が${result.longHoldX}です。`);
+  assert(result.longHoldSettledX === 7, "長押しを離した後も移動が続いています。");
+  assert(result.directionInputDark, "方向ボタンを押している間に暗くなりません。");
+  assert(result.directionInputReleased, "方向ボタンを離しても暗いままです。");
+  assert(result.actionInputDark, "Aボタンを押している間に暗くなりません。");
+  assert(result.actionInputReleased, "Aボタンを離しても暗いままです。");
+  assert(result.smoothMoveStarted, "1マス移動の表示補間が開始されません。");
   assert(result.xOutsidePlayZone === "11", "Landから外周Panelへ出られません。");
   assert(result.yInTopUiArea === "2", "画面上部をステージとして歩けません。");
   assert(result.topUiSprite.includes("hero-up-idle.png"), "移動方向と勇者画像が同期していません。");

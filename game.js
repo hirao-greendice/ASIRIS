@@ -12,6 +12,9 @@ const DIRECTIONS = Object.freeze({
 
 const BUTTON_STEP_DELAY = 160;
 const ATTACK_DURATION = 260;
+const PLAYER_MOVE_DURATION = 140;
+const HOLD_REPEAT_DELAY = 320;
+const HOLD_REPEAT_INTERVAL = 150;
 const HERO_SPRITE_PATHS = Object.freeze(
   Object.keys(DIRECTIONS).flatMap((direction) => (
     ["idle", "attack"].map((pose) => `asset/hero-${direction}-${pose}.png`)
@@ -231,6 +234,9 @@ const state = {
   buttonMotionTimer: null,
   isAttacking: false,
   attackTimer: null,
+  lastRenderedPlayer: null,
+  directionRepeatTimers: new Map(),
+  pressedControlSources: new Map(),
 };
 
 const cellKey = (x, y) => `${x},${y}`;
@@ -350,12 +356,13 @@ function createScreenObject(object) {
     element.dataset.action = object.action;
     element.setAttribute("aria-label", object.label);
     element.append(createLabeledContent(object));
-    if (state.player && containsCell(object, state.player.x, state.player.y)) {
+    const isPressedByHero = state.player && containsCell(object, state.player.x, state.player.y);
+    const isPressedByInput = [...state.pressedControlSources.values()].includes(object.action);
+    if (isPressedByHero) {
       element.classList.add("is-player-pressed");
-      element.setAttribute("aria-pressed", "true");
-    } else {
-      element.setAttribute("aria-pressed", "false");
     }
+    if (isPressedByInput) element.classList.add("is-input-pressed");
+    element.setAttribute("aria-pressed", String(Boolean(isPressedByHero || isPressedByInput)));
   } else {
     element.setAttribute("aria-hidden", "true");
   }
@@ -371,6 +378,16 @@ function createPanelTile(x, y) {
   }
   tile.dataset.objectId = `panel-${x}-${y}`;
   tile.dataset.objectKind = "panel";
+  tile.setAttribute("aria-hidden", "true");
+  setGridArea(tile, { x, y });
+  return tile;
+}
+
+function createSeaTile(x, y) {
+  const tile = document.createElement("div");
+  tile.className = "stage-object stage-object--sea";
+  tile.dataset.objectId = `sea-${x}-${y}`;
+  tile.dataset.objectKind = "sea";
   tile.setAttribute("aria-hidden", "true");
   setGridArea(tile, { x, y });
   return tile;
@@ -430,16 +447,44 @@ function createPlayer() {
   return player;
 }
 
+function animatePlayerFrom(previousPlayer) {
+  if (!previousPlayer || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+  const deltaX = previousPlayer.x - state.player.x;
+  const deltaY = previousPlayer.y - state.player.y;
+  if (Math.abs(deltaX) + Math.abs(deltaY) !== 1) return;
+
+  const player = stageElement.querySelector("#player");
+  const stageBounds = stageElement.getBoundingClientRect();
+  const fromX = deltaX * (stageBounds.width / BOARD.columns);
+  const fromY = deltaY * (stageBounds.height / BOARD.rows);
+
+  player.animate(
+    [
+      { transform: `translate(${fromX}px, ${fromY}px)` },
+      { transform: "translate(0, 0)" },
+    ],
+    {
+      duration: PLAYER_MOVE_DURATION,
+      easing: "cubic-bezier(0.22, 0.8, 0.35, 1)",
+    },
+  );
+}
+
 function render() {
   const stage = currentStage();
   const fragment = document.createDocumentFragment();
   const playZone = SCREEN_OBJECTS.find((object) => object.id === "play-zone");
+  const previousPlayer = state.lastRenderedPlayer
+    ? { ...state.lastRenderedPlayer }
+    : null;
 
   fragment.append(createScreenObject(playZone));
 
   for (let y = 0; y < BOARD.rows; y += 1) {
     for (let x = 0; x < BOARD.columns; x += 1) {
-      if (!containsCell(playZone, x, y)) fragment.append(createPanelTile(x, y));
+      if (containsCell(playZone, x, y)) fragment.append(createSeaTile(x, y));
+      else fragment.append(createPanelTile(x, y));
     }
   }
 
@@ -460,6 +505,8 @@ function render() {
 
   const number = stageElement.querySelector('[data-object-id="stage-number"] .stage-number__value');
   number.textContent = `${stage.number}-1`;
+  animatePlayerFrom(previousPlayer);
+  state.lastRenderedPlayer = { x: state.player.x, y: state.player.y };
 
 }
 
@@ -467,16 +514,19 @@ function loadStage(index, message = "") {
   const stage = STAGES[index];
   clearButtonMotion();
   clearAttack();
+  clearDirectionRepeats();
   state.manualInputSources.clear();
+  state.pressedControlSources.clear();
   state.currentStageIndex = index;
   state.player = { ...stage.start };
+  state.lastRenderedPlayer = null;
   state.history = [];
   state.message = message || `ステージ${stage.number}：矢印で移動します`;
   render();
 }
 
-function remember() {
-  state.history.push({ ...state.player });
+function remember(player = state.player) {
+  state.history.push({ ...player });
   if (state.history.length > 200) state.history.shift();
 }
 
@@ -500,6 +550,30 @@ function directionButtonAt(x, y) {
     && containsCell(object, x, y)
   ));
   return button ? directionFromAction(button.action) : null;
+}
+
+function refreshControlPressedStates() {
+  stageElement.querySelectorAll(".stage-object--button[data-action]").forEach((element) => {
+    const object = SCREEN_OBJECTS.find((candidate) => candidate.id === element.dataset.objectId);
+    const isPressedByHero = Boolean(
+      object && state.player && containsCell(object, state.player.x, state.player.y)
+    );
+    const isPressedByInput = [...state.pressedControlSources.values()].includes(element.dataset.action);
+    element.classList.toggle("is-player-pressed", isPressedByHero);
+    element.classList.toggle("is-input-pressed", isPressedByInput);
+    element.setAttribute("aria-pressed", String(isPressedByHero || isPressedByInput));
+  });
+}
+
+function pressControl(sourceId, action) {
+  if (!action || state.pressedControlSources.get(sourceId) === action) return;
+  state.pressedControlSources.set(sourceId, action);
+  refreshControlPressedStates();
+}
+
+function releaseControl(sourceId) {
+  if (!state.pressedControlSources.delete(sourceId)) return;
+  refreshControlPressedStates();
 }
 
 function screenButtonAt(x, y) {
@@ -645,10 +719,11 @@ function performManualMove(directionName) {
   }
 
   const previousButton = screenButtonAt(state.player.x, state.player.y);
-  remember();
+  const previousPlayer = { ...state.player };
   state.player.facing = directionName;
 
   if (moveOneCell(directionName)) {
+    remember(previousPlayer);
     state.message = `${DIRECTIONS[directionName].label}へ移動しました`;
   } else {
     state.message = "その先は盤面外または穴です";
@@ -674,12 +749,44 @@ function clearAttack() {
   state.isAttacking = false;
 }
 
+function clearDirectionRepeat(directionName) {
+  const timer = state.directionRepeatTimers.get(directionName);
+  if (timer !== undefined) window.clearTimeout(timer);
+  state.directionRepeatTimers.delete(directionName);
+}
+
+function clearDirectionRepeats() {
+  [...state.directionRepeatTimers.keys()].forEach(clearDirectionRepeat);
+}
+
+function hasActiveDirection(directionName) {
+  return [...state.manualInputSources.values()].includes(directionName);
+}
+
+function scheduleDirectionRepeat(directionName, delay) {
+  clearDirectionRepeat(directionName);
+  const timer = window.setTimeout(() => {
+    state.directionRepeatTimers.delete(directionName);
+    if (!hasActiveDirection(directionName)) return;
+
+    performManualMove(directionName);
+    scheduleDirectionRepeat(directionName, HOLD_REPEAT_INTERVAL);
+  }, delay);
+  state.directionRepeatTimers.set(directionName, timer);
+}
+
+function startDirectionRepeat(directionName) {
+  if (state.directionRepeatTimers.has(directionName)) return;
+  scheduleDirectionRepeat(directionName, HOLD_REPEAT_DELAY);
+}
+
 function pressDirection(sourceId, directionName) {
   if (!DIRECTIONS[directionName] || state.manualInputSources.has(sourceId)) return;
 
   const directionWasAlreadyPressed = [...state.manualInputSources.values()].includes(directionName);
   state.manualInputSources.set(sourceId, directionName);
 
+  if (!directionWasAlreadyPressed) startDirectionRepeat(directionName);
   if (!directionWasAlreadyPressed || directionButtonAt(state.player.x, state.player.y)) {
     performManualMove(directionName);
   }
@@ -687,8 +794,10 @@ function pressDirection(sourceId, directionName) {
 
 function releaseDirection(sourceId) {
   if (!state.manualInputSources.has(sourceId)) return;
+  const directionName = state.manualInputSources.get(sourceId);
   state.manualInputSources.delete(sourceId);
   state.buttonMotion?.ignoredSources.delete(sourceId);
+  if (!hasActiveDirection(directionName)) clearDirectionRepeat(directionName);
 
   if (directionButtonAt(state.player.x, state.player.y)) {
     if (state.buttonMotionTimer !== null) window.clearTimeout(state.buttonMotionTimer);
@@ -821,16 +930,26 @@ function runAction(action) {
 
 stageElement.addEventListener("pointerdown", (event) => {
   const button = event.target.closest("[data-action]");
+  if (!button) return;
+
+  const sourceId = `pointer:${event.pointerId}`;
+  pressControl(sourceId, button.dataset.action);
   const directionName = directionFromAction(button?.dataset.action);
   if (!directionName) return;
 
   event.preventDefault();
-  stageElement.setPointerCapture?.(event.pointerId);
-  pressDirection(`pointer:${event.pointerId}`, directionName);
+  try {
+    stageElement.setPointerCapture?.(event.pointerId);
+  } catch {
+    // Synthetic pointer events do not own an active pointer to capture.
+  }
+  pressDirection(sourceId, directionName);
 });
 
 function releasePointerDirection(event) {
-  releaseDirection(`pointer:${event.pointerId}`);
+  const sourceId = `pointer:${event.pointerId}`;
+  releaseDirection(sourceId);
+  releaseControl(sourceId);
 }
 
 window.addEventListener("pointerup", releasePointerDirection);
@@ -857,14 +976,22 @@ window.addEventListener("keydown", (event) => {
     ArrowLeft: "left",
   };
   const directionName = keyDirections[event.key];
+  const sourceId = `key:${event.code || event.key}`;
   if (directionName) {
     event.preventDefault();
-    if (!event.repeat) pressDirection(`key:${event.key}`, directionName);
+    if (!event.repeat) {
+      pressControl(sourceId, `move-${directionName}`);
+      pressDirection(sourceId, directionName);
+    }
     return;
   }
 
   if (event.repeat) return;
-  if (["Enter", " "].includes(event.key) && event.target.closest?.("button")) return;
+  const focusedButton = event.target.closest?.("button[data-action]");
+  if (["Enter", " "].includes(event.key) && focusedButton) {
+    pressControl(sourceId, focusedButton.dataset.action);
+    return;
+  }
 
   const keyActions = {
     a: "interact",
@@ -879,18 +1006,23 @@ window.addEventListener("keydown", (event) => {
   const action = keyActions[event.key];
   if (!action) return;
   event.preventDefault();
+  pressControl(sourceId, action);
   runAction(action);
 });
 
 window.addEventListener("keyup", (event) => {
+  const sourceId = `key:${event.code || event.key}`;
   if (["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"].includes(event.key)) {
-    releaseDirection(`key:${event.key}`);
+    releaseDirection(sourceId);
   }
+  releaseControl(sourceId);
 });
 
 window.addEventListener("blur", () => {
   const sourceIds = [...state.manualInputSources.keys()];
   sourceIds.forEach(releaseDirection);
+  state.pressedControlSources.clear();
+  refreshControlPressedStates();
 });
 
 validateStageData();

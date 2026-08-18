@@ -67,11 +67,17 @@ button {
 .stage-object--zone {
   z-index: 0;
   background-color: var(--sea-face);
+  pointer-events: none;
+}
+
+.stage-object--sea,
+.stage-object--hole {
+  z-index: 0;
+  background-color: var(--sea-face);
   background-image: url("asset/sea.webp");
   background-position: center;
   background-repeat: no-repeat;
-  /* Show only the uniform inner 32x32 pixels; the asset's bright outer pixel never enters the stage. */
-  background-size: 112.5% 112.5%;
+  background-size: 100% 100%;
   pointer-events: none;
 }
 
@@ -113,12 +119,6 @@ button {
     var(--land-face) 0 var(--tile-face-end),
     var(--land-side) var(--tile-face-end) 100%
   );
-}
-
-.stage-object--hole {
-  z-index: calc(21 + var(--depth));
-  background: var(--sea-face);
-  pointer-events: none;
 }
 
 .stage-object--button {
@@ -176,6 +176,7 @@ button {
 }
 
 .stage-object--button:active,
+.stage-object--button.is-input-pressed,
 .stage-object--button.is-player-pressed {
   filter: brightness(68%);
 }
