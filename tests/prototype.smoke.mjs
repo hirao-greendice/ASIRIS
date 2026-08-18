@@ -24,6 +24,10 @@ heroAssetNames.forEach((fileName) => {
   }
 });
 
+if (!existsSync(resolve(here, "..", "asset", "warp-point.png"))) {
+  throw new Error("ワープポイント素材が見つかりません。");
+}
+
 if (!browserPath) throw new Error("ChromeまたはEdgeが見つかりません。");
 
 const port = await new Promise((resolvePort, rejectPort) => {
@@ -118,11 +122,11 @@ try {
     const stage = document.querySelector("#stage");
     const bounds = stage.getBoundingClientRect();
     const playZone = document.querySelector('[data-object-id="play-zone"]');
-    const firstSea = document.querySelector('[data-object-id="sea-1-3"]');
-    const nextSea = document.querySelector('[data-object-id="sea-2-3"]');
+    const firstSea = document.querySelector('[data-object-id="sea-1-2"]');
+    const nextSea = document.querySelector('[data-object-id="sea-2-2"]');
     const panelTop = document.querySelector('[data-object-id="panel-0-0"]');
     const panelBelow = document.querySelector('[data-object-id="panel-0-1"]');
-    const exposedPanel = document.querySelector('[data-object-id="panel-1-2"]');
+    const exposedPanel = document.querySelector('[data-object-id="panel-1-1"]');
     const land = document.querySelector('[data-object-kind="floor"]:not(.has-tile-below)');
     const stageNumber = document.querySelector('[data-object-id="stage-number"]');
     const settings = document.querySelector('[data-object-id="settings"]');
@@ -130,16 +134,35 @@ try {
     const direction = document.querySelector('[data-object-id="move-right"]');
     const action = document.querySelector('[data-object-id="interact"]');
     const undo = document.querySelector('[data-object-id="undo"]');
-    const cellHeight = bounds.height / 21;
-    const cellWidth = bounds.width / 12;
+    const warp = document.querySelector('[data-object-kind="warp"]');
+    const cellHeight = bounds.height / 19;
+    const cellWidth = bounds.width / 11;
     return {
       cells: document.querySelectorAll(".board-cell").length,
       panels: document.querySelectorAll('[data-object-kind="panel"]').length,
       seas: document.querySelectorAll('[data-object-kind="sea"]').length,
+      warps: document.querySelectorAll('[data-object-kind="warp"]').length,
       stageId: stage.dataset.stageId,
       playZoneSize: [playZone.dataset.width, playZone.dataset.height],
+      playZonePosition: [playZone.dataset.x, playZone.dataset.y],
       stageNumberSize: [stageNumber.dataset.width, stageNumber.dataset.height],
       settingsSize: [settings.dataset.width, settings.dataset.height],
+      hintSize: [hint.dataset.width, hint.dataset.height],
+      topUiPositions: {
+        settings: [settings.dataset.x, settings.dataset.y],
+        stage: [stageNumber.dataset.x, stageNumber.dataset.y],
+        hint: [hint.dataset.x, hint.dataset.y],
+      },
+      bottomUiPositions: {
+        up: [document.querySelector('[data-object-id="move-up"]').dataset.x, document.querySelector('[data-object-id="move-up"]').dataset.y],
+        left: [document.querySelector('[data-object-id="move-left"]').dataset.x, document.querySelector('[data-object-id="move-left"]').dataset.y],
+        right: [direction.dataset.x, direction.dataset.y],
+        down: [document.querySelector('[data-object-id="move-down"]').dataset.x, document.querySelector('[data-object-id="move-down"]').dataset.y],
+        action: [action.dataset.x, action.dataset.y],
+        undo: [undo.dataset.x, undo.dataset.y],
+      },
+      actionRightColumns: 11 - (Number(action.dataset.x) + Number(action.dataset.width)),
+      undoRightColumns: 11 - (Number(undo.dataset.x) + Number(undo.dataset.width)),
       playerPose: document.querySelector("#player").dataset.pose,
       playerSprite: document.querySelector("#player .player-sprite").src,
       hasStatusText: Boolean(document.querySelector("#stage-status")),
@@ -157,14 +180,24 @@ try {
       seaTilesTouch: Math.abs(
         firstSea.getBoundingClientRect().right - nextSea.getBoundingClientRect().left
       ) < 0.02,
+      warpLogicalSize: [warp.dataset.width, warp.dataset.height],
+      warpSprite: warp.querySelector(".warp-point__sprite").src,
+      topUiVisualsInset: parseFloat(getComputedStyle(settings, "::before").width) < settings.getBoundingClientRect().width
+        && parseFloat(getComputedStyle(settings, "::before").height) < settings.getBoundingClientRect().height
+        && parseFloat(getComputedStyle(stageNumber, "::before").width) < stageNumber.getBoundingClientRect().width
+        && parseFloat(getComputedStyle(stageNumber, "::before").height) < stageNumber.getBoundingClientRect().height
+        && parseFloat(getComputedStyle(hint, "::before").width) < hint.getBoundingClientRect().width
+        && parseFloat(getComputedStyle(hint, "::before").height) < hint.getBoundingClientRect().height,
+      stageNumberIsHorizontal: getComputedStyle(stageNumber.querySelector(".stage-number__copy"))
+        .gridTemplateColumns.split(" ").length === 2,
       panelColor: getComputedStyle(panelBelow).backgroundColor,
       landColor: getComputedStyle(document.querySelector('[data-object-kind="floor"].has-tile-below')).backgroundColor,
       panelSide: getComputedStyle(exposedPanel).backgroundImage,
       landSide: getComputedStyle(land).backgroundImage,
       uiAssets: {
-        settings: getComputedStyle(settings).backgroundImage,
-        stage: getComputedStyle(stageNumber).backgroundImage,
-        hint: getComputedStyle(hint).backgroundImage,
+        settings: getComputedStyle(settings, "::before").backgroundImage,
+        stage: getComputedStyle(stageNumber, "::before").backgroundImage,
+        hint: getComputedStyle(hint, "::before").backgroundImage,
         direction: getComputedStyle(direction).backgroundImage,
         action: getComputedStyle(action).backgroundImage,
         undo: getComputedStyle(undo).backgroundImage,
@@ -175,16 +208,29 @@ try {
   })()`);
 
   assert(initial.cells === 0, "グリッド線用の補助セルが残っています。");
-  assert(initial.panels === 12 * 21 - 10 * 10, `パネル数が${initial.panels}です。`);
-  assert(initial.seas === 10 * 10, `Seaタイル数が${initial.seas}です。`);
+  assert(initial.panels === 11 * 19 - 9 * 9, `パネル数が${initial.panels}です。`);
+  assert(initial.seas === 9 * 9, `Seaタイル数が${initial.seas}です。`);
+  assert(initial.warps === 1, `表示中のワープポイント数が${initial.warps}です。`);
   assert(initial.stageId === "knowledge-01", "初期ステージが正しくありません。");
-  assert(initial.playZoneSize.join("x") === "10x10", "中央プレイエリアが10×10ではありません。");
-  assert(initial.stageNumberSize.join("x") === "4x2", "ステージ番号が4×2ではありません。");
+  assert(initial.playZoneSize.join("x") === "9x9", "中央プレイエリアが9×9ではありません。");
+  assert(initial.playZonePosition.join(",") === "1,2", "中央プレイエリアが上から3行目にありません。");
+  assert(initial.stageNumberSize.join("x") === "7x2", "ステージ番号が7×2ではありません。");
   assert(initial.settingsSize.join("x") === "2x2", "設定ボタンが2×2ではありません。");
+  assert(initial.hintSize.join("x") === "2x2", "ヒントボタンが2×2ではありません。");
+  assert(initial.topUiPositions.settings.join(",") === "0,0", "設定ボタンが左上の2×2範囲にありません。");
+  assert(initial.topUiPositions.stage.join(",") === "2,0", "ステージ表示が上端の3列目から始まっていません。");
+  assert(initial.topUiPositions.hint.join(",") === "9,0", "ヒントボタンが右上の2×2範囲にありません。");
+  assert(initial.bottomUiPositions.up.join(",") === "3,12", "上ボタンの位置が違います。");
+  assert(initial.bottomUiPositions.left.join(",") === "1,14", "左ボタンの位置が違います。");
+  assert(initial.bottomUiPositions.right.join(",") === "5,14", "右ボタンの位置が違います。");
+  assert(initial.bottomUiPositions.down.join(",") === "3,16", "下ボタンの位置が違います。");
+  assert(initial.bottomUiPositions.action.join(",") === "8,12", "Aボタンの位置が違います。");
+  assert(initial.bottomUiPositions.undo.join(",") === "8,16", "Uボタンの位置が違います。");
+  assert(initial.actionRightColumns === 1 && initial.undoRightColumns === 1, "A/Uボタン右側の余白が1列ではありません。");
   assert(initial.playerPose === "idle", "勇者の初期状態が通常画像ではありません。");
   assert(initial.playerSprite.includes("hero-right-idle.png"), "初期方向の勇者画像が違います。");
   assert(!initial.hasStatusText, "十字ボタン上の説明テキストが残っています。");
-  assert(Math.abs(initial.ratio - 12 / 21) < 0.002, `盤面比率が${initial.ratio}です。`);
+  assert(Math.abs(initial.ratio - 11 / 19) < 0.002, `盤面比率が${initial.ratio}です。`);
   assert(initial.landOverhangs && initial.panelOverhangs, "LandまたはPanelの下への出っ張りがありません。");
   assert(initial.landFitsGridWidth && initial.panelFitsGridWidth, "地形がグリッド幅からずれています。");
   assert(initial.lowerPanelIsAbove, "下の行のPanelが前面になっていません。");
@@ -193,6 +239,10 @@ try {
   assert(initial.seaImageSize === "100% 100%", `Sea素材が拡大されています: ${initial.seaImageSize}`);
   assert(initial.seaFitsGrid, "Sea素材が1マスの大きさに収まっていません。");
   assert(initial.seaTilesTouch, "Seaタイル同士の位置がずれています。");
+  assert(initial.warpLogicalSize.join("x") === "1x1", "ワープポイントの論理サイズが1マスではありません。");
+  assert(initial.warpSprite.includes("warp-point.png"), "追加されたワープポイント素材が使われていません。");
+  assert(initial.topUiVisualsInset, "上部UIの画像に論理判定内の余白がありません。");
+  assert(initial.stageNumberIsHorizontal, "ステージ番号が横並びではありません。");
   assert(initial.panelColor === "rgb(199, 165, 204)", `Panelの色が素材と違います: ${initial.panelColor}`);
   assert(initial.landColor === "rgb(57, 181, 74)", `Landの色が素材と違います: ${initial.landColor}`);
   assert(initial.panelSide.includes("rgb(138, 114, 143)"), "Panel側面の色が素材と違います。");
@@ -214,9 +264,9 @@ try {
     const click = (action) => document.querySelector('[data-action="' + action + '"]').click();
     const wait = (milliseconds) => new Promise((resolveWait) => setTimeout(resolveWait, milliseconds));
 
-    const seaIsBlocked = !isWalkable(3, 6);
-    const landIsWalkable = isWalkable(3, 7);
-    const panelIsWalkable = isWalkable(11, 8);
+    const seaIsBlocked = !isWalkable(3, 5);
+    const landIsWalkable = isWalkable(3, 6);
+    const panelIsWalkable = isWalkable(10, 7);
 
     click("interact");
     const attackPose = document.querySelector("#player").dataset.pose;
@@ -226,12 +276,16 @@ try {
     const returnedSprite = document.querySelector("#player .player-sprite").src;
 
     const resetPlayer = () => {
+      clearButtonMotion();
+      clearAttack();
       clearDirectionRepeats();
       state.manualInputSources.clear();
       state.pressedControlSources.clear();
+      state.currentStageIndex = 0;
       state.player = { ...currentStage().start };
       state.history = [];
       state.lastRenderedPlayer = null;
+      state.warpArrivalKey = null;
       render();
     };
 
@@ -298,13 +352,17 @@ try {
     const smoothMoveStarted = movementFrames.length === 2
       && movementFrames[0].transform !== movementFrames[1].transform
       && movementAnimation.effect.getTiming().duration === PLAYER_MOVE_DURATION;
-    for (let index = 0; index < 7; index += 1) click("move-right");
+    state.player = { x: 9, y: 7, facing: "right" };
+    state.warpArrivalKey = warpKey(0, warpAt(0, 9, 7));
+    state.lastRenderedPlayer = null;
+    render();
+    click("move-right");
     const xOutsidePlayZone = document.querySelector("#player").dataset.x;
     for (let index = 0; index < 6; index += 1) click("move-up");
     const yInTopUiArea = document.querySelector("#player").dataset.y;
     const topUiSprite = document.querySelector("#player .player-sprite").src;
 
-    state.player = { x: 3, y: 13, facing: "down" };
+    state.player = { x: 3, y: 11, facing: "down" };
     render();
     click("move-down");
     const yOnUpButton = document.querySelector("#player").dataset.y;
@@ -312,7 +370,7 @@ try {
     await wait(BUTTON_STEP_DELAY + 60);
     const yAfterAutomaticMove = document.querySelector("#player").dataset.y;
 
-    state.player = { x: 8, y: 13, facing: "down" };
+    state.player = { x: 8, y: 11, facing: "down" };
     state.message = "";
     render();
     click("move-down");
@@ -320,6 +378,34 @@ try {
     const aButtonDark = document.querySelector('[data-object-id="interact"]').classList.contains("is-player-pressed");
     const aButtonAttackPose = document.querySelector("#player").dataset.pose;
     const aButtonAttackSprite = document.querySelector("#player .player-sprite").src;
+
+    resetPlayer();
+    state.player = { x: 8, y: 7, facing: "right" };
+    render();
+    click("move-right");
+    const firstWarpStage = state.currentStageIndex;
+    const firstWarpPosition = [state.player.x, state.player.y];
+    const firstWarpArrivalLocked = state.warpArrivalKey === warpKey(1, warpAt(1, 9, 7));
+
+    click("move-left");
+    click("move-right");
+    const secondWarpStage = state.currentStageIndex;
+
+    click("move-right");
+    click("move-left");
+    const reverseWarpStage = state.currentStageIndex;
+    const upwardWarp = nearestWarpInDirection(1, warpAt(1, 9, 7), "up");
+
+    resetPlayer();
+    state.player = { x: 10, y: 0, facing: "right" };
+    render();
+    click("move-right");
+    const connectedStage = state.currentStageIndex;
+    const connectedPosition = [state.player.x, state.player.y];
+    undo();
+    const undoAcrossStage = state.currentStageIndex === 0
+      && state.player.x === 10
+      && state.player.y === 0;
 
     return {
       seaIsBlocked,
@@ -349,6 +435,15 @@ try {
       aButtonDark,
       aButtonAttackPose,
       aButtonAttackSprite,
+      firstWarpStage,
+      firstWarpPosition,
+      firstWarpArrivalLocked,
+      secondWarpStage,
+      reverseWarpStage,
+      upwardWarp,
+      connectedStage,
+      connectedPosition,
+      undoAcrossStage,
     };
   })()`);
 
@@ -369,16 +464,25 @@ try {
   assert(result.actionInputDark, "Aボタンを押している間に暗くなりません。");
   assert(result.actionInputReleased, "Aボタンを離しても暗いままです。");
   assert(result.smoothMoveStarted, "1マス移動の表示補間が開始されません。");
-  assert(result.xOutsidePlayZone === "11", "Landから外周Panelへ出られません。");
-  assert(result.yInTopUiArea === "2", "画面上部をステージとして歩けません。");
+  assert(result.xOutsidePlayZone === "10", "Landから外周Panelへ出られません。");
+  assert(result.yInTopUiArea === "1", "画面上部をステージとして歩けません。");
   assert(result.topUiSprite.includes("hero-up-idle.png"), "移動方向と勇者画像が同期していません。");
-  assert(result.yOnUpButton === "14", "上ボタンへ乗れません。");
+  assert(result.yOnUpButton === "12", "上ボタンへ乗れません。");
   assert(result.upButtonDark, "勇者が乗った矢印ボタンが暗くなりません。");
-  assert(result.yAfterAutomaticMove === "13", "上ボタンへ乗った直後に自動移動しません。");
+  assert(result.yAfterAutomaticMove === "11", "上ボタンへ乗った直後に自動移動しません。");
   assert(result.aButtonTriggered, "勇者が踏んだAボタンが作動しません。");
   assert(result.aButtonDark, "勇者が乗ったAボタンが暗くなりません。");
   assert(result.aButtonAttackPose === "attack", "勇者が踏んだAボタンで剣を振りません。");
   assert(result.aButtonAttackSprite.includes("hero-down-attack.png"), "踏んだAボタンの攻撃方向が違います。");
+  assert(result.firstWarpStage === 1, "右向き進入で右隣のワープへ移動しません。");
+  assert(result.firstWarpPosition.join(",") === "9,7", "ワープ先のマスが違います。");
+  assert(result.firstWarpArrivalLocked, "到着直後のワープ再発動が防止されていません。");
+  assert(result.secondWarpStage === 2, "同じ行の右側で最も近いワープを選んでいません。");
+  assert(result.reverseWarpStage === 1, "左向き進入で左側の最寄りワープへ戻りません。");
+  assert(result.upwardWarp === null, "同じ列にないワープを上下方向の候補にしています。");
+  assert(result.connectedStage === 1, "画面端から地続きの隣接ステージへ移動できません。");
+  assert(result.connectedPosition.join(",") === "0,0", "隣接ステージでの接続座標が違います。");
+  assert(result.undoAcrossStage, "ステージをまたぐ移動を一手戻しできません。");
 
   console.log("smoke test: ok");
 } finally {
