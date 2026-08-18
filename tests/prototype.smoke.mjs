@@ -202,6 +202,9 @@ try {
         action: getComputedStyle(action).backgroundImage,
         undo: getComputedStyle(undo).backgroundImage,
       },
+      touchGesturesDisabled: getComputedStyle(stage).touchAction === "none",
+      selectionDisabled: getComputedStyle(stage).userSelect === "none"
+        && getComputedStyle(direction).userSelect === "none",
       horizontalOverflow: document.documentElement.scrollWidth > innerWidth,
       verticalOverflow: document.documentElement.scrollHeight > innerHeight,
     };
@@ -260,6 +263,9 @@ try {
   });
   assert(!initial.horizontalOverflow && !initial.verticalOverflow, "ページに不要なスクロールがあります。");
 
+  assert(initial.touchGesturesDisabled, "The game board still permits browser touch gestures.");
+  assert(initial.selectionDisabled, "The game board still permits long-press selection.");
+
   const result = await evaluate(`(async () => {
     const click = (action) => document.querySelector('[data-action="' + action + '"]').click();
     const wait = (milliseconds) => new Promise((resolveWait) => setTimeout(resolveWait, milliseconds));
@@ -281,6 +287,7 @@ try {
       clearDirectionRepeats();
       state.manualInputSources.clear();
       state.pressedControlSources.clear();
+      state.activeDirectionPointerSources.clear();
       state.currentStageIndex = 0;
       state.player = { ...currentStage().start };
       state.history = [];
@@ -325,6 +332,70 @@ try {
     }));
     const directionInputReleased = !document.querySelector('[data-action="move-right"]')
       .classList.contains("is-input-pressed");
+
+    resetPlayer();
+    const stageElement = document.querySelector("#stage");
+    const slidePointerId = 73;
+    const slideSourceId = "pointer:" + slidePointerId;
+    document.querySelector('[data-action="move-right"]').dispatchEvent(new PointerEvent("pointerdown", {
+      bubbles: true,
+      pointerId: slidePointerId,
+      button: 0,
+      buttons: 1,
+    }));
+    const slideRightPosition = [state.player.x, state.player.y];
+
+    const movePointerTo = (element) => {
+      const bounds = element.getBoundingClientRect();
+      stageElement.dispatchEvent(new PointerEvent("pointermove", {
+        bubbles: true,
+        pointerId: slidePointerId,
+        buttons: 1,
+        clientX: bounds.left + bounds.width / 2,
+        clientY: bounds.top + bounds.height / 2,
+      }));
+    };
+
+    movePointerTo(document.querySelector('[data-action="move-up"]'));
+    const slideUpPosition = [state.player.x, state.player.y];
+    const slideChangedToUp = state.manualInputSources.get(slideSourceId) === "up"
+      && document.querySelector('[data-action="move-up"]').classList.contains("is-input-pressed")
+      && !document.querySelector('[data-action="move-right"]').classList.contains("is-input-pressed");
+
+    const stageBounds = stageElement.getBoundingClientRect();
+    stageElement.dispatchEvent(new PointerEvent("pointermove", {
+      bubbles: true,
+      pointerId: slidePointerId,
+      buttons: 1,
+      clientX: stageBounds.left + (5.5 * stageBounds.width / 11),
+      clientY: stageBounds.top + (12.5 * stageBounds.height / 19),
+    }));
+    const slideStoppedInGap = !state.manualInputSources.has(slideSourceId)
+      && !document.querySelector('[data-action="move-up"]').classList.contains("is-input-pressed");
+
+    movePointerTo(document.querySelector('[data-action="move-left"]'));
+    const slideLeftPosition = [state.player.x, state.player.y];
+    const slideRestartedAsLeft = state.manualInputSources.get(slideSourceId) === "left"
+      && document.querySelector('[data-action="move-left"]').classList.contains("is-input-pressed");
+    window.dispatchEvent(new PointerEvent("pointerup", {
+      bubbles: true,
+      pointerId: slidePointerId,
+      button: 0,
+      buttons: 0,
+    }));
+    const slideReleased = !state.activeDirectionPointerSources.has(slideSourceId)
+      && !state.manualInputSources.has(slideSourceId)
+      && !document.querySelector('[data-action="move-left"]').classList.contains("is-input-pressed");
+
+    const contextMenuEvent = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    document.querySelector('[data-action="move-up"]').dispatchEvent(contextMenuEvent);
+    const selectStartEvent = new Event("selectstart", { bubbles: true, cancelable: true });
+    document.querySelector('[data-action="move-up"]').dispatchEvent(selectStartEvent);
+    const dragStartEvent = new Event("dragstart", { bubbles: true, cancelable: true });
+    document.querySelector('[data-action="move-up"]').dispatchEvent(dragStartEvent);
+    const longPressEventsBlocked = contextMenuEvent.defaultPrevented
+      && selectStartEvent.defaultPrevented
+      && dragStartEvent.defaultPrevented;
 
     const actionPointerId = 72;
     document.querySelector('[data-action="interact"]').dispatchEvent(new PointerEvent("pointerdown", {
@@ -422,6 +493,14 @@ try {
       longHoldSettledX,
       directionInputDark,
       directionInputReleased,
+      slideRightPosition,
+      slideUpPosition,
+      slideChangedToUp,
+      slideStoppedInGap,
+      slideLeftPosition,
+      slideRestartedAsLeft,
+      slideReleased,
+      longPressEventsBlocked,
       actionInputDark,
       actionInputReleased,
       smoothMoveStarted,
@@ -483,6 +562,15 @@ try {
   assert(result.connectedStage === 1, "画面端から地続きの隣接ステージへ移動できません。");
   assert(result.connectedPosition.join(",") === "0,0", "隣接ステージでの接続座標が違います。");
   assert(result.undoAcrossStage, "ステージをまたぐ移動を一手戻しできません。");
+
+  assert(result.slideRightPosition.join(",") === "4,7", "Slide input did not begin with one move to the right.");
+  assert(result.slideUpPosition.join(",") === "4,6", "Sliding onto Up did not switch direction immediately.");
+  assert(result.slideChangedToUp, "The pressed state did not switch from Right to Up.");
+  assert(result.slideStoppedInGap, "Direction input did not stop in the D-pad gap.");
+  assert(result.slideLeftPosition.join(",") === "3,6", "Sliding from the gap onto Left did not move immediately.");
+  assert(result.slideRestartedAsLeft, "Left did not become pressed after re-entering the D-pad.");
+  assert(result.slideReleased, "Direction input remained active after the pointer was released.");
+  assert(result.longPressEventsBlocked, "Long-press selection, menu, or drag events were not prevented.");
 
   console.log("smoke test: ok");
 } finally {

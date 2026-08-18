@@ -237,6 +237,7 @@ const state = {
   lastRenderedPlayer: null,
   directionRepeatTimers: new Map(),
   pressedControlSources: new Map(),
+  activeDirectionPointerSources: new Set(),
   warpArrivalKey: null,
 };
 
@@ -532,6 +533,7 @@ function loadStage(index, message = "") {
   clearDirectionRepeats();
   state.manualInputSources.clear();
   state.pressedControlSources.clear();
+  state.activeDirectionPointerSources.clear();
   state.warpArrivalKey = null;
   state.currentStageIndex = index;
   state.player = { ...stage.start };
@@ -1040,6 +1042,7 @@ stageElement.addEventListener("pointerdown", (event) => {
   if (!directionName) return;
 
   event.preventDefault();
+  state.activeDirectionPointerSources.add(sourceId);
   try {
     stageElement.setPointerCapture?.(event.pointerId);
   } catch {
@@ -1048,14 +1051,40 @@ stageElement.addEventListener("pointerdown", (event) => {
   pressDirection(sourceId, directionName);
 });
 
+stageElement.addEventListener("pointermove", (event) => {
+  const sourceId = `pointer:${event.pointerId}`;
+  if (!state.activeDirectionPointerSources.has(sourceId)) return;
+
+  event.preventDefault();
+  const pointedElement = document.elementFromPoint(event.clientX, event.clientY);
+  const button = pointedElement?.closest?.(".stage-object--button[data-action]");
+  const nextDirection = directionFromAction(button?.dataset.action);
+  const currentDirection = state.manualInputSources.get(sourceId) ?? null;
+
+  if (currentDirection === nextDirection) return;
+
+  releaseDirection(sourceId);
+  releaseControl(sourceId);
+
+  if (!nextDirection) return;
+  pressControl(sourceId, button.dataset.action);
+  pressDirection(sourceId, nextDirection);
+});
+
 function releasePointerDirection(event) {
   const sourceId = `pointer:${event.pointerId}`;
+  state.activeDirectionPointerSources.delete(sourceId);
   releaseDirection(sourceId);
   releaseControl(sourceId);
 }
 
 window.addEventListener("pointerup", releasePointerDirection);
 window.addEventListener("pointercancel", releasePointerDirection);
+stageElement.addEventListener("lostpointercapture", releasePointerDirection);
+
+["contextmenu", "selectstart", "dragstart"].forEach((eventName) => {
+  stageElement.addEventListener(eventName, (event) => event.preventDefault());
+});
 
 stageElement.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
@@ -1123,6 +1152,7 @@ window.addEventListener("keyup", (event) => {
 window.addEventListener("blur", () => {
   const sourceIds = [...state.manualInputSources.keys()];
   sourceIds.forEach(releaseDirection);
+  state.activeDirectionPointerSources.clear();
   state.pressedControlSources.clear();
   refreshControlPressedStates();
 });

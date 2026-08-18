@@ -53,8 +53,25 @@ button {
   overflow: hidden;
   background: var(--panel-face);
   box-shadow: 0 0 0 1px rgb(0 0 0 / 35%);
-  touch-action: manipulation;
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
   user-select: none;
+}
+
+.stage *,
+.stage *::before,
+.stage *::after {
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.stage img {
+  -webkit-user-drag: none;
+  user-drag: none;
 }
 
 .stage-object {
