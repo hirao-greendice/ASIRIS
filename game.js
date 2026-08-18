@@ -10,11 +10,17 @@ const DIRECTIONS = Object.freeze({
   left: Object.freeze({ x: -1, y: 0, angle: "270deg", label: "左" }),
 });
 
-const BUTTON_STEP_DELAY = 160;
+const BUTTON_STEP_DELAY = 240;
 const ATTACK_DURATION = 260;
-const PLAYER_MOVE_DURATION = 140;
-const HOLD_REPEAT_DELAY = 320;
-const HOLD_REPEAT_INTERVAL = 150;
+const PLAYER_MOVE_DURATION = 210;
+const HOLD_REPEAT_DELAY = 380;
+const HOLD_REPEAT_INTERVAL = 240;
+const UNDO_REPEAT_DELAY = 440;
+const UNDO_REPEAT_INTERVAL = 220;
+const ENVIRONMENT_FLIP_INTERVAL = 1600;
+const WARP_ACTIVATION_DELAY = 300;
+const WARP_EXIT_DELAY = 300;
+const FOOTSTEP_SNIPPET_DURATION = 500;
 const HERO_SPRITE_PATHS = Object.freeze(
   Object.keys(DIRECTIONS).flatMap((direction) => (
     ["idle", "attack"].map((pose) => `asset/hero-${direction}-${pose}.png`)
@@ -25,6 +31,71 @@ const HERO_SPRITE_CACHE = HERO_SPRITE_PATHS.map((path) => {
   image.src = path;
   return image;
 });
+
+function createSoundEffect(path, volume) {
+  const audio = new Audio(path);
+  audio.preload = "auto";
+  audio.volume = volume;
+  return audio;
+}
+
+const footstepAudio = createSoundEffect("asset/footstep.mp3", 0.65);
+const warpAudio = createSoundEffect("asset/warp.mp3", 0.7);
+let footstepStopTimer = null;
+let soundEffectsUnlocked = false;
+
+function unlockSoundEffects() {
+  if (soundEffectsUnlocked) return;
+  soundEffectsUnlocked = true;
+  const wasMuted = warpAudio.muted;
+  warpAudio.muted = true;
+
+  const finishUnlock = () => {
+    warpAudio.pause();
+    try {
+      warpAudio.currentTime = 0;
+    } catch {
+      // Metadata may not be ready during the first interaction.
+    }
+    warpAudio.muted = wasMuted;
+  };
+
+  const playback = warpAudio.play();
+  if (playback?.then) {
+    playback.then(finishUnlock).catch(() => {
+      soundEffectsUnlocked = false;
+      finishUnlock();
+    });
+  } else {
+    window.setTimeout(finishUnlock, 0);
+  }
+}
+
+function restartSound(audio) {
+  audio.pause();
+  try {
+    audio.currentTime = 0;
+  } catch {
+    // Metadata may not be ready on the very first input.
+  }
+  const playback = audio.play();
+  playback?.catch(() => {
+    // Browsers can reject playback until the first user interaction.
+  });
+}
+
+function playFootstepSound() {
+  if (footstepStopTimer !== null) window.clearTimeout(footstepStopTimer);
+  restartSound(footstepAudio);
+  footstepStopTimer = window.setTimeout(() => {
+    footstepAudio.pause();
+    footstepStopTimer = null;
+  }, FOOTSTEP_SNIPPET_DURATION);
+}
+
+function playWarpSound() {
+  restartSound(warpAudio);
+}
 
 const rect = (x, y, width, height) => {
   const cells = [];
@@ -222,6 +293,16 @@ const STAGES = Object.freeze([
 ]);
 
 const stageElement = document.querySelector("#stage");
+let environmentFlipTimer = null;
+
+function startEnvironmentAnimation() {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (environmentFlipTimer !== null) window.clearInterval(environmentFlipTimer);
+
+  environmentFlipTimer = window.setInterval(() => {
+    stageElement.classList.toggle("is-environment-flipped");
+  }, ENVIRONMENT_FLIP_INTERVAL);
+}
 
 const state = {
   currentStageIndex: 0,
@@ -236,9 +317,13 @@ const state = {
   attackTimer: null,
   lastRenderedPlayer: null,
   directionRepeatTimers: new Map(),
+  activeUndoSources: new Set(),
+  undoRepeatTimers: new Map(),
   pressedControlSources: new Map(),
   activeDirectionPointerSources: new Set(),
   warpArrivalKey: null,
+  pendingWarpExit: null,
+  warpExitTimer: null,
 };
 
 const cellKey = (x, y) => `${x},${y}`;
@@ -531,6 +616,8 @@ function loadStage(index, message = "") {
   clearButtonMotion();
   clearAttack();
   clearDirectionRepeats();
+  clearUndoRepeats();
+  clearWarpExit();
   state.manualInputSources.clear();
   state.pressedControlSources.clear();
   state.activeDirectionPointerSources.clear();
@@ -662,6 +749,83 @@ function nearestWarpInDirection(sourceStageIndex, sourceWarp, directionName) {
   return candidates[0] ?? null;
 }
 
+function clearWarpExit() {
+  if (state.warpExitTimer !== null) window.clearTimeout(state.warpExitTimer);
+  state.warpExitTimer = null;
+  state.pendingWarpExit = null;
+}
+
+function scheduleWarpExit(pendingWarpExit) {
+  state.warpExitTimer = window.setTimeout(() => {
+    if (state.pendingWarpExit !== pendingWarpExit) return;
+    const destinationWarp = warpAt(
+      pendingWarpExit.destinationStageIndex,
+      state.player.x,
+      state.player.y,
+    );
+    const isStillAtDestination = state.currentStageIndex === pendingWarpExit.destinationStageIndex
+      && destinationWarp?.id === pendingWarpExit.destinationWarpId;
+
+    if (!isStillAtDestination) {
+      clearWarpExit();
+      return;
+    }
+
+    state.currentStageIndex = pendingWarpExit.exit.stageIndex;
+    state.player.x = pendingWarpExit.exit.x;
+    state.player.y = pendingWarpExit.exit.y;
+    state.player.facing = pendingWarpExit.directionName;
+    state.warpArrivalKey = null;
+    pendingWarpExit.phase = "moving";
+    playFootstepSound();
+    state.warpExitTimer = window.setTimeout(() => {
+      if (state.pendingWarpExit === pendingWarpExit) state.pendingWarpExit = null;
+      state.warpExitTimer = null;
+    }, PLAYER_MOVE_DURATION);
+    render();
+  }, WARP_EXIT_DELAY);
+}
+
+function beginWarpSequence(sourceStageIndex, sourceWarp, destination, exit, directionName) {
+  clearWarpExit();
+  const pendingWarpExit = {
+    sourceStageIndex,
+    sourceWarpId: sourceWarp.id,
+    destinationStageIndex: destination.stageIndex,
+    destinationWarpId: destination.warp.id,
+    exit,
+    directionName,
+    phase: "activating",
+  };
+  state.pendingWarpExit = pendingWarpExit;
+
+  state.warpExitTimer = window.setTimeout(() => {
+    if (state.pendingWarpExit !== pendingWarpExit) return;
+    const sourceWarpAtPlayer = warpAt(
+      pendingWarpExit.sourceStageIndex,
+      state.player.x,
+      state.player.y,
+    );
+    const isStillAtSource = state.currentStageIndex === pendingWarpExit.sourceStageIndex
+      && sourceWarpAtPlayer?.id === pendingWarpExit.sourceWarpId;
+
+    if (!isStillAtSource) {
+      clearWarpExit();
+      return;
+    }
+
+    state.currentStageIndex = pendingWarpExit.destinationStageIndex;
+    state.player.x = destination.warp.x;
+    state.player.y = destination.warp.y;
+    state.player.facing = pendingWarpExit.directionName;
+    state.warpArrivalKey = warpKey(destination.stageIndex, destination.warp);
+    pendingWarpExit.phase = "waiting";
+    playWarpSound();
+    render();
+    scheduleWarpExit(pendingWarpExit);
+  }, WARP_ACTIVATION_DELAY);
+}
+
 function resolveWarpAfterMove(directionName) {
   const sourceStageIndex = state.currentStageIndex;
   const sourceWarp = warpAt(sourceStageIndex, state.player.x, state.player.y);
@@ -680,26 +844,34 @@ function resolveWarpAfterMove(directionName) {
     return { sourceWarp, destination: null };
   }
 
-  state.currentStageIndex = destination.stageIndex;
-  state.player.x = destination.warp.x;
-  state.player.y = destination.warp.y;
-  state.player.facing = directionName;
-  state.warpArrivalKey = warpKey(destination.stageIndex, destination.warp);
-  return { sourceWarp, destination };
+  const exit = walkableStepFrom(
+    destination.stageIndex,
+    destination.warp.x,
+    destination.warp.y,
+    directionName,
+  );
+  if (!exit || warpAt(exit.stageIndex, exit.x, exit.y)) {
+    state.warpArrivalKey = sourceKey;
+    return { sourceWarp, destination: null, blockedDestination: destination };
+  }
+
+  state.warpArrivalKey = sourceKey;
+  beginWarpSequence(sourceStageIndex, sourceWarp, destination, exit, directionName);
+  return { sourceWarp, destination, exit };
 }
 
-function moveOneCell(directionName) {
+function walkableStepFrom(stageIndex, x, y, directionName) {
   const direction = DIRECTIONS[directionName];
-  let nextStageIndex = state.currentStageIndex;
-  let nextX = state.player.x + direction.x;
-  let nextY = state.player.y + direction.y;
+  let nextStageIndex = stageIndex;
+  let nextX = x + direction.x;
+  let nextY = y + direction.y;
 
   if (nextX < 0 || nextX >= BOARD.columns || nextY < 0 || nextY >= BOARD.rows) {
-    const stagePosition = currentStage().position;
+    const stagePosition = STAGES[stageIndex].position;
     const worldStageX = stagePosition.x + (nextX < 0 ? -1 : nextX >= BOARD.columns ? 1 : 0);
     const worldStageY = stagePosition.y + (nextY < 0 ? -1 : nextY >= BOARD.rows ? 1 : 0);
     nextStageIndex = stageIndexAtWorldPosition(worldStageX, worldStageY);
-    if (nextStageIndex < 0) return false;
+    if (nextStageIndex < 0) return null;
 
     if (nextX < 0) nextX = BOARD.columns - 1;
     else if (nextX >= BOARD.columns) nextX = 0;
@@ -707,11 +879,24 @@ function moveOneCell(directionName) {
     else if (nextY >= BOARD.rows) nextY = 0;
   }
 
-  if (!isWalkable(nextX, nextY, nextStageIndex)) return false;
-  state.currentStageIndex = nextStageIndex;
-  state.player.x = nextX;
-  state.player.y = nextY;
+  if (!isWalkable(nextX, nextY, nextStageIndex)) return null;
+  return { stageIndex: nextStageIndex, x: nextX, y: nextY };
+}
+
+function moveOneCell(directionName) {
+  const next = walkableStepFrom(
+    state.currentStageIndex,
+    state.player.x,
+    state.player.y,
+    directionName,
+  );
+  if (!next) return false;
+
+  state.currentStageIndex = next.stageIndex;
+  state.player.x = next.x;
+  state.player.y = next.y;
   state.player.facing = directionName;
+  playFootstepSound();
   return true;
 }
 
@@ -763,6 +948,10 @@ function beginButtonMotion(ignoreCurrentSources) {
 }
 
 function advanceButtonMotion() {
+  if (state.pendingWarpExit) {
+    clearButtonMotion();
+    return;
+  }
   const tileDirection = directionButtonAt(state.player.x, state.player.y);
   if (!tileDirection) {
     clearButtonMotion();
@@ -789,7 +978,7 @@ function advanceButtonMotion() {
 
   const warpResult = resolveWarpAfterMove(tileDirection);
   if (warpResult?.destination) {
-    state.message = `ワープしてステージ${currentStage().number}へ移動しました`;
+    state.message = `ワープ起動中：ステージ${STAGES[warpResult.destination.stageIndex].number}へ移動します`;
   } else if (state.currentStageIndex !== previousStageIndex) {
     state.message = `地続きのステージ${currentStage().number}へ移動しました`;
   } else {
@@ -814,6 +1003,7 @@ function advanceButtonMotion() {
 }
 
 function performManualMove(directionName) {
+  if (state.pendingWarpExit) return;
   const tileDirection = directionButtonAt(state.player.x, state.player.y);
 
   if (tileDirection) {
@@ -842,7 +1032,7 @@ function performManualMove(directionName) {
     remember(previousPlayer, previousStageIndex);
     const warpResult = resolveWarpAfterMove(directionName);
     if (warpResult?.destination) {
-      state.message = `ワープしてステージ${currentStage().number}へ移動しました`;
+      state.message = `ワープ起動中：ステージ${STAGES[warpResult.destination.stageIndex].number}へ移動します`;
     } else if (warpResult && !warpResult.destination) {
       state.message = `${DIRECTIONS[directionName].label}方向にワープポイントがありません`;
     } else if (state.currentStageIndex !== previousStageIndex) {
@@ -882,6 +1072,41 @@ function clearDirectionRepeat(directionName) {
 
 function clearDirectionRepeats() {
   [...state.directionRepeatTimers.keys()].forEach(clearDirectionRepeat);
+}
+
+function clearUndoRepeat(sourceId) {
+  const timer = state.undoRepeatTimers.get(sourceId);
+  if (timer !== undefined) window.clearTimeout(timer);
+  state.undoRepeatTimers.delete(sourceId);
+}
+
+function clearUndoRepeats() {
+  [...state.undoRepeatTimers.keys()].forEach(clearUndoRepeat);
+  state.activeUndoSources.clear();
+}
+
+function scheduleUndoRepeat(sourceId, delay) {
+  clearUndoRepeat(sourceId);
+  const timer = window.setTimeout(() => {
+    state.undoRepeatTimers.delete(sourceId);
+    if (!state.activeUndoSources.has(sourceId)) return;
+
+    undo();
+    scheduleUndoRepeat(sourceId, UNDO_REPEAT_INTERVAL);
+  }, delay);
+  state.undoRepeatTimers.set(sourceId, timer);
+}
+
+function pressUndo(sourceId) {
+  if (state.activeUndoSources.has(sourceId)) return;
+  state.activeUndoSources.add(sourceId);
+  undo();
+  scheduleUndoRepeat(sourceId, UNDO_REPEAT_DELAY);
+}
+
+function releaseUndo(sourceId) {
+  state.activeUndoSources.delete(sourceId);
+  clearUndoRepeat(sourceId);
 }
 
 function hasActiveDirection(directionName) {
@@ -947,6 +1172,7 @@ function move(directionName) {
 function undo() {
   clearButtonMotion();
   clearAttack();
+  clearWarpExit();
   const previous = state.history.pop();
   if (!previous) {
     state.message = "これ以上戻せません";
@@ -1033,12 +1259,26 @@ function runAction(action) {
 }
 
 stageElement.addEventListener("pointerdown", (event) => {
+  unlockSoundEffects();
   const button = event.target.closest("[data-action]");
   if (!button) return;
 
   const sourceId = `pointer:${event.pointerId}`;
-  pressControl(sourceId, button.dataset.action);
-  const directionName = directionFromAction(button?.dataset.action);
+  const action = button.dataset.action;
+  pressControl(sourceId, action);
+
+  if (action === "undo") {
+    event.preventDefault();
+    try {
+      stageElement.setPointerCapture?.(event.pointerId);
+    } catch {
+      // Synthetic pointer events do not own an active pointer to capture.
+    }
+    pressUndo(sourceId);
+    return;
+  }
+
+  const directionName = directionFromAction(action);
   if (!directionName) return;
 
   event.preventDefault();
@@ -1071,16 +1311,17 @@ stageElement.addEventListener("pointermove", (event) => {
   pressDirection(sourceId, nextDirection);
 });
 
-function releasePointerDirection(event) {
+function releasePointerInput(event) {
   const sourceId = `pointer:${event.pointerId}`;
   state.activeDirectionPointerSources.delete(sourceId);
   releaseDirection(sourceId);
+  releaseUndo(sourceId);
   releaseControl(sourceId);
 }
 
-window.addEventListener("pointerup", releasePointerDirection);
-window.addEventListener("pointercancel", releasePointerDirection);
-stageElement.addEventListener("lostpointercapture", releasePointerDirection);
+window.addEventListener("pointerup", releasePointerInput);
+window.addEventListener("pointercancel", releasePointerInput);
+stageElement.addEventListener("lostpointercapture", releasePointerInput);
 
 ["contextmenu", "selectstart", "dragstart"].forEach((eventName) => {
   stageElement.addEventListener(eventName, (event) => event.preventDefault());
@@ -1096,10 +1337,12 @@ stageElement.addEventListener("click", (event) => {
     if (event.detail === 0) tapDirection(directionName);
     return;
   }
+  if (button.dataset.action === "undo" && event.detail !== 0) return;
   runAction(button.dataset.action);
 });
 
 window.addEventListener("keydown", (event) => {
+  unlockSoundEffects();
   const keyDirections = {
     ArrowUp: "up",
     ArrowRight: "right",
@@ -1138,6 +1381,10 @@ window.addEventListener("keydown", (event) => {
   if (!action) return;
   event.preventDefault();
   pressControl(sourceId, action);
+  if (action === "undo") {
+    pressUndo(sourceId);
+    return;
+  }
   runAction(action);
 });
 
@@ -1146,16 +1393,19 @@ window.addEventListener("keyup", (event) => {
   if (["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"].includes(event.key)) {
     releaseDirection(sourceId);
   }
+  releaseUndo(sourceId);
   releaseControl(sourceId);
 });
 
 window.addEventListener("blur", () => {
   const sourceIds = [...state.manualInputSources.keys()];
   sourceIds.forEach(releaseDirection);
+  clearUndoRepeats();
   state.activeDirectionPointerSources.clear();
   state.pressedControlSources.clear();
   refreshControlPressedStates();
 });
 
 validateStageData();
+startEnvironmentAnimation();
 loadStage(0, "矢印で移動し、知識のマスでAを押してください");

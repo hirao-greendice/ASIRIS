@@ -28,6 +28,12 @@ if (!existsSync(resolve(here, "..", "asset", "warp-point.png"))) {
   throw new Error("ワープポイント素材が見つかりません。");
 }
 
+["footstep.mp3", "warp.mp3"].forEach((fileName) => {
+  if (!existsSync(resolve(here, "..", "asset", fileName))) {
+    throw new Error(`効果音素材 ${fileName} が見つかりません。`);
+  }
+});
+
 if (!browserPath) throw new Error("ChromeまたはEdgeが見つかりません。");
 
 const port = await new Promise((resolvePort, rejectPort) => {
@@ -182,6 +188,13 @@ try {
       ) < 0.02,
       warpLogicalSize: [warp.dataset.width, warp.dataset.height],
       warpSprite: warp.querySelector(".warp-point__sprite").src,
+      footstepSoundSource: footstepAudio.src,
+      warpSoundSource: warpAudio.src,
+      footstepSnippetDuration: FOOTSTEP_SNIPPET_DURATION,
+      environmentTimerStarted: environmentFlipTimer !== null,
+      environmentFlipInterval: ENVIRONMENT_FLIP_INTERVAL,
+      seaFlipIsInstant: getComputedStyle(firstSea).transitionDuration === "0s",
+      warpFlipIsInstant: getComputedStyle(warp.querySelector(".warp-point__sprite")).transitionDuration === "0s",
       topUiVisualsInset: parseFloat(getComputedStyle(settings, "::before").width) < settings.getBoundingClientRect().width
         && parseFloat(getComputedStyle(settings, "::before").height) < settings.getBoundingClientRect().height
         && parseFloat(getComputedStyle(stageNumber, "::before").width) < stageNumber.getBoundingClientRect().width
@@ -265,14 +278,55 @@ try {
 
   assert(initial.touchGesturesDisabled, "The game board still permits browser touch gestures.");
   assert(initial.selectionDisabled, "The game board still permits long-press selection.");
+  assert(initial.footstepSoundSource.includes("asset/footstep.mp3"), "The footstep sound is not loaded.");
+  assert(initial.warpSoundSource.includes("asset/warp.mp3"), "The warp sound is not loaded.");
+  assert(initial.footstepSnippetDuration === 500, "The footstep sound is not trimmed to 500ms at playback.");
+  assert(initial.environmentTimerStarted, "The SEA/warp alternating timer did not start.");
+  assert(initial.environmentFlipInterval === 1600, "The SEA/warp alternating interval is unexpected.");
+  assert(initial.seaFlipIsInstant, "SEA still becomes narrow while flipping.");
+  assert(initial.warpFlipIsInstant, "The warp still becomes narrow while flipping.");
 
   const result = await evaluate(`(async () => {
     const click = (action) => document.querySelector('[data-action="' + action + '"]').click();
     const wait = (milliseconds) => new Promise((resolveWait) => setTimeout(resolveWait, milliseconds));
+    const playedSoundPaths = [];
+    const pausedSoundPaths = [];
+    HTMLMediaElement.prototype.play = function playForTest() {
+      playedSoundPaths.push(this.currentSrc || this.src);
+      return Promise.resolve();
+    };
+    HTMLMediaElement.prototype.pause = function pauseForTest() {
+      pausedSoundPaths.push(this.currentSrc || this.src);
+    };
 
     const seaIsBlocked = !isWalkable(3, 5);
     const landIsWalkable = isWalkable(3, 6);
     const panelIsWalkable = isWalkable(10, 7);
+
+    window.clearInterval(environmentFlipTimer);
+    environmentFlipTimer = null;
+    const animatedSea = document.querySelector('[data-object-kind="sea"]');
+    const animatedWarp = document.querySelector(".warp-point__sprite");
+    animatedSea.style.transition = "none";
+    animatedWarp.style.transition = "none";
+    document.querySelector("#stage").classList.remove("is-environment-flipped");
+    void animatedSea.offsetWidth;
+    document.querySelector("#stage").classList.add("is-environment-flipped");
+    const seaFlipMatrix = new DOMMatrix(getComputedStyle(animatedSea).transform);
+    const warpFlipMatrix = new DOMMatrix(getComputedStyle(animatedWarp).transform);
+    const seaFlipsHorizontally = seaFlipMatrix.a < 0 && seaFlipMatrix.d > 0;
+    const warpFlipsHorizontally = warpFlipMatrix.a < 0 && warpFlipMatrix.d > 0;
+    document.querySelector("#stage").classList.remove("is-environment-flipped");
+    const movementTimingIsCalmer = PLAYER_MOVE_DURATION >= 200
+      && HOLD_REPEAT_INTERVAL > PLAYER_MOVE_DURATION
+      && BUTTON_STEP_DELAY > PLAYER_MOVE_DURATION;
+    playFootstepSound();
+    const footstepTimerScheduled = footstepStopTimer !== null;
+    const pauseCountAfterFootstepStart = pausedSoundPaths.length;
+    await wait(FOOTSTEP_SNIPPET_DURATION + 40);
+    const footstepSnippetStopped = footstepStopTimer === null
+      && pausedSoundPaths.length > pauseCountAfterFootstepStart
+      && pausedSoundPaths.at(-1).includes("asset/footstep.mp3");
 
     click("interact");
     const attackPose = document.querySelector("#player").dataset.pose;
@@ -285,6 +339,8 @@ try {
       clearButtonMotion();
       clearAttack();
       clearDirectionRepeats();
+      clearUndoRepeats();
+      clearWarpExit();
       state.manualInputSources.clear();
       state.pressedControlSources.clear();
       state.activeDirectionPointerSources.clear();
@@ -297,7 +353,11 @@ try {
     };
 
     resetPlayer();
+    const footstepPlayCountBeforeMove = playedSoundPaths
+      .filter((path) => path.includes("asset/footstep.mp3")).length;
     pressDirection("test:short-hold", "right");
+    const footstepPlayedOnMove = playedSoundPaths
+      .filter((path) => path.includes("asset/footstep.mp3")).length > footstepPlayCountBeforeMove;
     await wait(HOLD_REPEAT_DELAY - 80);
     releaseDirection("test:short-hold");
     const shortHoldX = state.player.x;
@@ -416,6 +476,53 @@ try {
       .classList.contains("is-input-pressed");
 
     resetPlayer();
+    for (let index = 0; index < 3; index += 1) click("move-right");
+    const shortUndoPointerId = 74;
+    document.querySelector('[data-action="undo"]').dispatchEvent(new PointerEvent("pointerdown", {
+      bubbles: true,
+      pointerId: shortUndoPointerId,
+      button: 0,
+      buttons: 1,
+    }));
+    const shortUndoImmediateX = state.player.x;
+    const shortUndoInputDark = document.querySelector('[data-action="undo"]')
+      .classList.contains("is-input-pressed");
+    await wait(UNDO_REPEAT_DELAY - 80);
+    window.dispatchEvent(new PointerEvent("pointerup", {
+      bubbles: true,
+      pointerId: shortUndoPointerId,
+      button: 0,
+      buttons: 0,
+    }));
+    const shortUndoReleased = !document.querySelector('[data-action="undo"]')
+      .classList.contains("is-input-pressed");
+    await wait(UNDO_REPEAT_INTERVAL + 60);
+    const shortUndoSettledX = state.player.x;
+
+    resetPlayer();
+    for (let index = 0; index < 4; index += 1) click("move-right");
+    const longUndoPointerId = 75;
+    document.querySelector('[data-action="undo"]').dispatchEvent(new PointerEvent("pointerdown", {
+      bubbles: true,
+      pointerId: longUndoPointerId,
+      button: 0,
+      buttons: 1,
+    }));
+    const longUndoImmediateX = state.player.x;
+    await wait(UNDO_REPEAT_DELAY + UNDO_REPEAT_INTERVAL + 50);
+    window.dispatchEvent(new PointerEvent("pointerup", {
+      bubbles: true,
+      pointerId: longUndoPointerId,
+      button: 0,
+      buttons: 0,
+    }));
+    const longUndoX = state.player.x;
+    await wait(UNDO_REPEAT_INTERVAL + 60);
+    const longUndoSettledX = state.player.x;
+    const undoRepeatReleased = state.activeUndoSources.size === 0
+      && state.undoRepeatTimers.size === 0;
+
+    resetPlayer();
 
     click("move-right");
     const movementAnimation = document.querySelector("#player").getAnimations()[0];
@@ -453,18 +560,71 @@ try {
     resetPlayer();
     state.player = { x: 8, y: 7, facing: "right" };
     render();
+    const warpPlayCountBeforeActivation = playedSoundPaths
+      .filter((path) => path.includes("asset/warp.mp3")).length;
     click("move-right");
+    const sourceWarpStage = state.currentStageIndex;
+    const sourceWarpPosition = [state.player.x, state.player.y];
+    const sourceWarpIsObservable = Boolean(
+      warpAt(state.currentStageIndex, state.player.x, state.player.y)
+      && state.pendingWarpExit?.phase === "activating"
+    );
+    click("move-left");
+    const inputBlockedWhileActivating = state.currentStageIndex === 0
+      && state.player.x === 9
+      && state.player.y === 7;
+    await wait(WARP_ACTIVATION_DELAY + 30);
+    const warpSoundPlayedOnActivation = playedSoundPaths
+      .filter((path) => path.includes("asset/warp.mp3")).length > warpPlayCountBeforeActivation;
     const firstWarpStage = state.currentStageIndex;
     const firstWarpPosition = [state.player.x, state.player.y];
-    const firstWarpArrivalLocked = state.warpArrivalKey === warpKey(1, warpAt(1, 9, 7));
+    const firstWarpIsObservable = Boolean(
+      warpAt(state.currentStageIndex, state.player.x, state.player.y)
+      && state.pendingWarpExit?.phase === "waiting"
+    );
+    const footstepPlayCountBeforeWarpExit = playedSoundPaths
+      .filter((path) => path.includes("asset/footstep.mp3")).length;
+    await wait(WARP_EXIT_DELAY + 30);
+    const footstepPlayedOnWarpExit = playedSoundPaths
+      .filter((path) => path.includes("asset/footstep.mp3")).length > footstepPlayCountBeforeWarpExit;
+    const firstWarpExitPosition = [state.player.x, state.player.y];
+    const warpExitAnimation = document.querySelector("#player").getAnimations()[0];
+    const warpExitFrames = warpExitAnimation?.effect.getKeyframes() ?? [];
+    const warpExitIsAnimated = state.pendingWarpExit?.phase === "moving"
+      && warpExitFrames.length === 2
+      && warpExitFrames[0].transform !== warpExitFrames[1].transform
+      && warpExitAnimation.effect.getTiming().duration === PLAYER_MOVE_DURATION;
+    const firstWarpExitIsClear = !warpAt(state.currentStageIndex, state.player.x, state.player.y)
+      && state.warpArrivalKey === null;
+    await wait(PLAYER_MOVE_DURATION + 30);
+    const warpSequenceFinished = state.pendingWarpExit === null;
+    undo();
+    const undoAfterWarp = state.currentStageIndex === 0
+      && state.player.x === 8
+      && state.player.y === 7;
 
-    click("move-left");
+    state.currentStageIndex = 1;
+    state.player = { x: 8, y: 7, facing: "right" };
+    state.history = [];
+    state.lastRenderedPlayer = null;
+    render();
     click("move-right");
+    const secondWarpSourceStage = state.currentStageIndex;
+    await wait(WARP_ACTIVATION_DELAY + 30);
+    const secondWarpArrivalStage = state.currentStageIndex;
+    const secondWarpArrivalPosition = [state.player.x, state.player.y];
+    await wait(WARP_EXIT_DELAY + PLAYER_MOVE_DURATION + 30);
     const secondWarpStage = state.currentStageIndex;
+    const secondWarpPosition = [state.player.x, state.player.y];
 
-    click("move-right");
     click("move-left");
+    const reverseWarpSourceStage = state.currentStageIndex;
+    await wait(WARP_ACTIVATION_DELAY + 30);
+    const reverseWarpArrivalStage = state.currentStageIndex;
+    const reverseWarpArrivalPosition = [state.player.x, state.player.y];
+    await wait(WARP_EXIT_DELAY + PLAYER_MOVE_DURATION + 30);
     const reverseWarpStage = state.currentStageIndex;
+    const reverseWarpPosition = [state.player.x, state.player.y];
     const upwardWarp = nearestWarpInDirection(1, warpAt(1, 9, 7), "up");
 
     resetPlayer();
@@ -482,12 +642,18 @@ try {
       seaIsBlocked,
       landIsWalkable,
       panelIsWalkable,
+      seaFlipsHorizontally,
+      warpFlipsHorizontally,
+      movementTimingIsCalmer,
+      footstepTimerScheduled,
+      footstepSnippetStopped,
       attackPose,
       attackSprite,
       returnedPose,
       returnedSprite,
       shortHoldX,
       shortHoldSettledX,
+      footstepPlayedOnMove,
       longHoldImmediateX,
       longHoldX,
       longHoldSettledX,
@@ -503,6 +669,14 @@ try {
       longPressEventsBlocked,
       actionInputDark,
       actionInputReleased,
+      shortUndoImmediateX,
+      shortUndoInputDark,
+      shortUndoReleased,
+      shortUndoSettledX,
+      longUndoImmediateX,
+      longUndoX,
+      longUndoSettledX,
+      undoRepeatReleased,
       smoothMoveStarted,
       xOutsidePlayZone,
       yInTopUiArea,
@@ -514,11 +688,30 @@ try {
       aButtonDark,
       aButtonAttackPose,
       aButtonAttackSprite,
+      sourceWarpStage,
+      sourceWarpPosition,
+      sourceWarpIsObservable,
+      inputBlockedWhileActivating,
+      warpSoundPlayedOnActivation,
       firstWarpStage,
       firstWarpPosition,
-      firstWarpArrivalLocked,
+      firstWarpIsObservable,
+      footstepPlayedOnWarpExit,
+      firstWarpExitPosition,
+      warpExitIsAnimated,
+      firstWarpExitIsClear,
+      warpSequenceFinished,
+      undoAfterWarp,
+      secondWarpSourceStage,
+      secondWarpArrivalStage,
+      secondWarpArrivalPosition,
       secondWarpStage,
+      secondWarpPosition,
+      reverseWarpSourceStage,
+      reverseWarpArrivalStage,
+      reverseWarpArrivalPosition,
       reverseWarpStage,
+      reverseWarpPosition,
       upwardWarp,
       connectedStage,
       connectedPosition,
@@ -553,11 +746,28 @@ try {
   assert(result.aButtonDark, "勇者が乗ったAボタンが暗くなりません。");
   assert(result.aButtonAttackPose === "attack", "勇者が踏んだAボタンで剣を振りません。");
   assert(result.aButtonAttackSprite.includes("hero-down-attack.png"), "踏んだAボタンの攻撃方向が違います。");
+  assert(result.sourceWarpStage === 0, "ワープへ入った瞬間に別ステージへ切り替わっています。");
+  assert(result.sourceWarpPosition.join(",") === "9,7", "ワープ元で待機する位置が違います。");
+  assert(result.sourceWarpIsObservable, "入った側のワープ上で発動を待つ段階がありません。");
+  assert(result.inputBlockedWhileActivating, "ワープ発動待機中に別の移動入力が割り込んでいます。");
   assert(result.firstWarpStage === 1, "右向き進入で右隣のワープへ移動しません。");
-  assert(result.firstWarpPosition.join(",") === "9,7", "ワープ先のマスが違います。");
-  assert(result.firstWarpArrivalLocked, "到着直後のワープ再発動が防止されていません。");
+  assert(result.firstWarpPosition.join(",") === "9,7", "ワープ直後に移動先ワープ上へ表示されません。");
+  assert(result.firstWarpIsObservable, "ワープ上で待機する段階をプレイヤーが観測できません。");
+  assert(result.firstWarpExitPosition.join(",") === "10,7", "待機後に進入方向へ1マス退出しません。");
+  assert(result.warpExitIsAnimated, "ワープ上から出口への1マス移動が表示されていません。");
+  assert(result.firstWarpExitIsClear, "ワープ後も勇者がワープポイント上に残っています。");
+  assert(result.warpSequenceFinished, "退出アニメーション後もワープ処理が残っています。");
+  assert(result.undoAfterWarp, "ワープと出口への移動を一度にUNDOできません。");
+  assert(result.secondWarpSourceStage === 1, "連続ワープが入った瞬間に切り替わっています。");
+  assert(result.secondWarpArrivalStage === 2, "連続ワープの待機後に移動先へ切り替わりません。");
+  assert(result.secondWarpArrivalPosition.join(",") === "9,7", "連続ワープの到着表示位置が違います。");
   assert(result.secondWarpStage === 2, "同じ行の右側で最も近いワープを選んでいません。");
+  assert(result.secondWarpPosition.join(",") === "10,7", "連続する右向きワープの出口位置が違います。");
+  assert(result.reverseWarpSourceStage === 2, "逆向きワープが入った瞬間に切り替わっています。");
+  assert(result.reverseWarpArrivalStage === 1, "逆向きワープの待機後に移動先へ切り替わりません。");
+  assert(result.reverseWarpArrivalPosition.join(",") === "9,7", "左向きワープの到着表示位置が違います。");
   assert(result.reverseWarpStage === 1, "左向き進入で左側の最寄りワープへ戻りません。");
+  assert(result.reverseWarpPosition.join(",") === "8,7", "左向きワープ後に出口の左隣へ移動しません。");
   assert(result.upwardWarp === null, "同じ列にないワープを上下方向の候補にしています。");
   assert(result.connectedStage === 1, "画面端から地続きの隣接ステージへ移動できません。");
   assert(result.connectedPosition.join(",") === "0,0", "隣接ステージでの接続座標が違います。");
@@ -571,6 +781,22 @@ try {
   assert(result.slideRestartedAsLeft, "Left did not become pressed after re-entering the D-pad.");
   assert(result.slideReleased, "Direction input remained active after the pointer was released.");
   assert(result.longPressEventsBlocked, "Long-press selection, menu, or drag events were not prevented.");
+  assert(result.seaFlipsHorizontally, "SEA tiles do not alternate horizontally.");
+  assert(result.warpFlipsHorizontally, "The warp point does not alternate horizontally.");
+  assert(result.movementTimingIsCalmer, "Movement repeats before its visual transition can settle.");
+  assert(result.footstepTimerScheduled, "The 500ms footstep stop timer was not scheduled.");
+  assert(result.footstepSnippetStopped, "The footstep sound did not stop after its first 500ms.");
+  assert(result.footstepPlayedOnMove, "Moving one cell did not play the footstep sound.");
+  assert(result.warpSoundPlayedOnActivation, "Warp activation did not play the warp sound.");
+  assert(result.footstepPlayedOnWarpExit, "Leaving a warp did not play the footstep sound.");
+  assert(result.shortUndoImmediateX === 5, "A short UNDO press did not undo exactly one move immediately.");
+  assert(result.shortUndoInputDark, "The UNDO button was not dark while held.");
+  assert(result.shortUndoReleased, "The UNDO button remained dark after release.");
+  assert(result.shortUndoSettledX === 5, "A short UNDO press repeated unexpectedly.");
+  assert(result.longUndoImmediateX === 6, "A long UNDO press did not undo once immediately.");
+  assert(result.longUndoX === 4, "Holding UNDO did not repeat at the expected rate.");
+  assert(result.longUndoSettledX === 4, "UNDO continued repeating after release.");
+  assert(result.undoRepeatReleased, "UNDO repeat state was not cleaned up after release.");
 
   console.log("smoke test: ok");
 } finally {

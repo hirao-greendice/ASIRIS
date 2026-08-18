@@ -98,6 +98,14 @@ button {
   pointer-events: none;
 }
 
+.stage-object--sea {
+  transform-origin: center;
+}
+
+.stage.is-environment-flipped .stage-object--sea {
+  transform: scaleX(-1);
+}
+
 .stage-object--panel,
 .stage-object--tile {
   align-self: start;
@@ -302,7 +310,12 @@ button {
   object-fit: contain;
   pointer-events: none;
   transform: translateY(-22%);
+  transform-origin: center;
   -webkit-user-drag: none;
+}
+
+.stage.is-environment-flipped .warp-point__sprite {
+  transform: translateY(-22%) scaleX(-1);
 }
 
 .stage-object--player {
