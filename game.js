@@ -11,6 +11,17 @@ const DIRECTIONS = Object.freeze({
 });
 
 const BUTTON_STEP_DELAY = 160;
+const ATTACK_DURATION = 260;
+const HERO_SPRITE_PATHS = Object.freeze(
+  Object.keys(DIRECTIONS).flatMap((direction) => (
+    ["idle", "attack"].map((pose) => `asset/hero-${direction}-${pose}.png`)
+  )),
+);
+const HERO_SPRITE_CACHE = HERO_SPRITE_PATHS.map((path) => {
+  const image = new Image();
+  image.src = path;
+  return image;
+});
 
 const rect = (x, y, width, height) => {
   const cells = [];
@@ -58,11 +69,11 @@ const SCREEN_OBJECTS = Object.freeze([
     id: "stage-number",
     kind: "button",
     action: "next-stage",
-    x: 5,
+    x: 4,
     y: 0,
-    width: 2,
+    width: 4,
     height: 2,
-    symbol: "1",
+    symbol: "1-1",
     label: "ステージ",
     className: "stage-number",
   },
@@ -138,7 +149,7 @@ const SCREEN_OBJECTS = Object.freeze([
     width: 2,
     height: 2,
     symbol: "A",
-    label: "調べる",
+    label: "剣を振る",
   },
   {
     id: "undo",
@@ -218,6 +229,8 @@ const state = {
   manualInputSources: new Map(),
   buttonMotion: null,
   buttonMotionTimer: null,
+  isAttacking: false,
+  attackTimer: null,
 };
 
 const cellKey = (x, y) => `${x},${y}`;
@@ -292,6 +305,7 @@ function setGridArea(element, object) {
   element.style.setProperty("--row", object.y + 1);
   element.style.setProperty("--width", object.width ?? 1);
   element.style.setProperty("--height", object.height ?? 1);
+  element.style.setProperty("--depth", object.y * 10);
   element.dataset.x = String(object.x);
   element.dataset.y = String(object.y);
   element.dataset.width = String(object.width ?? 1);
@@ -299,35 +313,26 @@ function setGridArea(element, object) {
   element.dataset.boardPart = "true";
 }
 
-function createBoardCell(x, y) {
-  const cell = document.createElement("span");
-  cell.className = "board-cell";
-  cell.style.gridColumn = String(x + 1);
-  cell.style.gridRow = String(y + 1);
-  cell.dataset.x = String(x);
-  cell.dataset.y = String(y);
-  cell.setAttribute("aria-hidden", "true");
-  return cell;
-}
-
 function createLabeledContent(object) {
   const fragment = document.createDocumentFragment();
-  const symbol = document.createElement("span");
-  symbol.className = "stage-object__symbol";
-  symbol.textContent = object.symbol;
-  if (object.icon) {
-    symbol.classList.add("stage-object__icon", `stage-object__icon--${object.icon}`);
-  }
-  symbol.setAttribute("aria-hidden", "true");
-  fragment.append(symbol);
 
-  if (!object.hideCaption) {
-    const caption = document.createElement("span");
-    caption.className = "stage-object__caption";
-    caption.textContent = object.label;
-    caption.setAttribute("aria-hidden", "true");
-    fragment.append(caption);
+  if (object.id === "stage-number") {
+    const copy = document.createElement("span");
+    copy.className = "stage-number__copy";
+
+    const label = document.createElement("span");
+    label.className = "stage-number__label";
+    label.textContent = "Stage";
+
+    const value = document.createElement("span");
+    value.className = "stage-number__value";
+    value.textContent = object.symbol;
+
+    copy.append(label, value);
+    fragment.append(copy);
+    return fragment;
   }
+
   return fragment;
 }
 
@@ -345,16 +350,36 @@ function createScreenObject(object) {
     element.dataset.action = object.action;
     element.setAttribute("aria-label", object.label);
     element.append(createLabeledContent(object));
+    if (state.player && containsCell(object, state.player.x, state.player.y)) {
+      element.classList.add("is-player-pressed");
+      element.setAttribute("aria-pressed", "true");
+    } else {
+      element.setAttribute("aria-pressed", "false");
+    }
   } else {
-    element.textContent = object.label;
     element.setAttribute("aria-hidden", "true");
   }
   return element;
 }
 
+function createPanelTile(x, y) {
+  const tile = document.createElement("div");
+  tile.className = "stage-object stage-object--panel";
+  const playZone = SCREEN_OBJECTS.find((object) => object.id === "play-zone");
+  if (y + 1 < BOARD.rows && !containsCell(playZone, x, y + 1)) {
+    tile.classList.add("has-tile-below");
+  }
+  tile.dataset.objectId = `panel-${x}-${y}`;
+  tile.dataset.objectKind = "panel";
+  tile.setAttribute("aria-hidden", "true");
+  setGridArea(tile, { x, y });
+  return tile;
+}
+
 function createFloorTile(cell, index) {
   const tile = document.createElement("div");
   tile.className = "stage-object stage-object--tile";
+  if (hasLandAt(cell.x, cell.y + 1)) tile.classList.add("has-tile-below");
   tile.dataset.objectId = `floor-${index}`;
   tile.dataset.objectKind = "floor";
   tile.setAttribute("aria-hidden", "true");
@@ -391,26 +416,38 @@ function createPlayer() {
   player.className = "stage-object stage-object--player";
   player.dataset.objectId = "player";
   player.dataset.objectKind = "player";
-  player.textContent = "人";
+  player.dataset.facing = state.player.facing;
+  player.dataset.pose = state.isAttacking ? "attack" : "idle";
   player.setAttribute("aria-label", "プレイヤー");
   setGridArea(player, state.player);
-  player.style.setProperty("--facing-angle", DIRECTIONS[state.player.facing].angle);
+
+  const sprite = document.createElement("img");
+  sprite.className = "player-sprite";
+  sprite.src = `asset/hero-${state.player.facing}-${state.isAttacking ? "attack" : "idle"}.png`;
+  sprite.alt = "";
+  sprite.draggable = false;
+  player.append(sprite);
   return player;
 }
 
 function render() {
   const stage = currentStage();
   const fragment = document.createDocumentFragment();
+  const playZone = SCREEN_OBJECTS.find((object) => object.id === "play-zone");
+
+  fragment.append(createScreenObject(playZone));
 
   for (let y = 0; y < BOARD.rows; y += 1) {
     for (let x = 0; x < BOARD.columns; x += 1) {
-      fragment.append(createBoardCell(x, y));
+      if (!containsCell(playZone, x, y)) fragment.append(createPanelTile(x, y));
     }
   }
 
-  SCREEN_OBJECTS.forEach((object) => fragment.append(createScreenObject(object)));
   stage.floor.forEach((cell, index) => fragment.append(createFloorTile(cell, index)));
   stage.holes.forEach((cell, index) => fragment.append(createHole(cell, index)));
+  SCREEN_OBJECTS
+    .filter((object) => object.kind === "button")
+    .forEach((object) => fragment.append(createScreenObject(object)));
   stage.objects
     .filter((object) => !state.collectedKnowledge.has(object.id))
     .forEach((object) => fragment.append(createEntity(object)));
@@ -421,14 +458,15 @@ function render() {
   stageElement.dataset.worldX = String(stage.position.x);
   stageElement.dataset.worldY = String(stage.position.y);
 
-  const number = stageElement.querySelector('[data-object-id="stage-number"] .stage-object__symbol');
-  number.textContent = String(stage.number);
+  const number = stageElement.querySelector('[data-object-id="stage-number"] .stage-number__value');
+  number.textContent = `${stage.number}-1`;
 
 }
 
 function loadStage(index, message = "") {
   const stage = STAGES[index];
   clearButtonMotion();
+  clearAttack();
   state.manualInputSources.clear();
   state.currentStageIndex = index;
   state.player = { ...stage.start };
@@ -464,9 +502,25 @@ function directionButtonAt(x, y) {
   return button ? directionFromAction(button.action) : null;
 }
 
+function screenButtonAt(x, y) {
+  return SCREEN_OBJECTS.find((object) => (
+    object.kind === "button" && containsCell(object, x, y)
+  ));
+}
+
+function isSeaCell(x, y) {
+  const playZone = SCREEN_OBJECTS.find((object) => object.id === "play-zone");
+  return containsCell(playZone, x, y);
+}
+
+function hasLandAt(x, y) {
+  return currentStage().floor.some((cell) => cell.x === x && cell.y === y);
+}
+
 function isWalkable(x, y) {
   if (x < 0 || y < 0 || x >= BOARD.columns || y >= BOARD.rows) return false;
-  return !currentStage().holes.some((hole) => hole.x === x && hole.y === y);
+  if (currentStage().holes.some((hole) => hole.x === x && hole.y === y)) return false;
+  return !isSeaCell(x, y) || hasLandAt(x, y);
 }
 
 function moveOneCell(directionName) {
@@ -543,6 +597,7 @@ function advanceButtonMotion() {
     return;
   }
 
+  const previousButton = screenButtonAt(state.player.x, state.player.y);
   if (!moveOneCell(tileDirection)) {
     state.message = `${DIRECTIONS[tileDirection].label}ボタンの先へ進めません`;
     clearButtonMotion();
@@ -553,7 +608,14 @@ function advanceButtonMotion() {
   state.message = `${DIRECTIONS[tileDirection].label}ボタンで移動中`;
   render();
 
-  const nextTileDirection = directionButtonAt(state.player.x, state.player.y);
+  const nextButton = screenButtonAt(state.player.x, state.player.y);
+  if (nextButton && nextButton.id !== previousButton?.id && !directionFromAction(nextButton.action)) {
+    clearButtonMotion();
+    runAction(nextButton.action);
+    return;
+  }
+
+  const nextTileDirection = directionFromAction(nextButton?.action);
   if (!nextTileDirection) {
     clearButtonMotion();
     return;
@@ -582,6 +644,7 @@ function performManualMove(directionName) {
     return;
   }
 
+  const previousButton = screenButtonAt(state.player.x, state.player.y);
   remember();
   state.player.facing = directionName;
 
@@ -592,10 +655,23 @@ function performManualMove(directionName) {
   }
   render();
 
-  if (directionButtonAt(state.player.x, state.player.y)) {
+  const enteredButton = screenButtonAt(state.player.x, state.player.y);
+  if (enteredButton && enteredButton.id !== previousButton?.id) {
+    const enteredDirection = directionFromAction(enteredButton.action);
+    if (!enteredDirection) {
+      runAction(enteredButton.action);
+      return;
+    }
+
     // このマスへ入るために使った入力は消費済み。着地後の相殺には使いません。
     beginButtonMotion(true);
   }
+}
+
+function clearAttack() {
+  if (state.attackTimer !== null) window.clearTimeout(state.attackTimer);
+  state.attackTimer = null;
+  state.isAttacking = false;
 }
 
 function pressDirection(sourceId, directionName) {
@@ -636,6 +712,7 @@ function move(directionName) {
 
 function undo() {
   clearButtonMotion();
+  clearAttack();
   const previous = state.history.pop();
   if (!previous) {
     state.message = "これ以上戻せません";
@@ -660,11 +737,11 @@ function findInteractionTarget() {
   });
 }
 
-function interact() {
+function interact(missMessage = "近くに調べられるものはありません") {
   const target = findInteractionTarget();
 
   if (!target) {
-    state.message = "近くに調べられるものはありません";
+    state.message = missMessage;
     render();
     return;
   }
@@ -696,6 +773,19 @@ function interact() {
   }
 }
 
+function attack() {
+  if (state.attackTimer !== null) window.clearTimeout(state.attackTimer);
+  state.isAttacking = true;
+  state.attackTimer = window.setTimeout(() => {
+    state.attackTimer = null;
+    state.isAttacking = false;
+    render();
+  }, ATTACK_DURATION);
+
+  // 剣を振った方向の現在地・1マス前を、従来のA判定として調べる。
+  interact("剣を振りました");
+}
+
 function showNextUnlockedStage() {
   const nextIndex = (state.currentStageIndex + 1) % state.unlockedStageCount;
   if (nextIndex === state.currentStageIndex) {
@@ -713,7 +803,7 @@ function runAction(action) {
   }
 
   const actions = {
-    interact,
+    interact: attack,
     undo,
     hint: () => {
       state.message = currentStage().hint;

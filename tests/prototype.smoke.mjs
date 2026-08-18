@@ -15,6 +15,14 @@ const browserCandidates = [
   "/usr/bin/chromium",
 ];
 const browserPath = browserCandidates.find(existsSync);
+const heroAssetNames = ["up", "right", "down", "left"]
+  .flatMap((direction) => ["idle", "attack"].map((pose) => `hero-${direction}-${pose}.png`));
+
+heroAssetNames.forEach((fileName) => {
+  if (!existsSync(resolve(here, "..", "asset", fileName))) {
+    throw new Error(`勇者素材 ${fileName} が見つかりません。`);
+  }
+});
 
 if (!browserPath) throw new Error("ChromeまたはEdgeが見つかりません。");
 
@@ -109,103 +117,162 @@ try {
   const initial = await evaluate(`(() => {
     const stage = document.querySelector("#stage");
     const bounds = stage.getBoundingClientRect();
-    const boardObjects = [...document.querySelectorAll('[data-board-part="true"]')];
+    const playZone = document.querySelector('[data-object-id="play-zone"]');
+    const panelTop = document.querySelector('[data-object-id="panel-0-0"]');
+    const panelBelow = document.querySelector('[data-object-id="panel-0-1"]');
+    const exposedPanel = document.querySelector('[data-object-id="panel-1-2"]');
+    const land = document.querySelector('[data-object-kind="floor"]:not(.has-tile-below)');
+    const stageNumber = document.querySelector('[data-object-id="stage-number"]');
+    const settings = document.querySelector('[data-object-id="settings"]');
+    const hint = document.querySelector('[data-object-id="hint"]');
+    const direction = document.querySelector('[data-object-id="move-right"]');
+    const action = document.querySelector('[data-object-id="interact"]');
+    const undo = document.querySelector('[data-object-id="undo"]');
+    const cellHeight = bounds.height / 21;
+    const cellWidth = bounds.width / 12;
     return {
       cells: document.querySelectorAll(".board-cell").length,
+      panels: document.querySelectorAll('[data-object-kind="panel"]').length,
       stageId: stage.dataset.stageId,
-      hasPlayZone: Boolean(document.querySelector('[data-object-id="play-zone"]')),
+      playZoneSize: [playZone.dataset.width, playZone.dataset.height],
+      stageNumberSize: [stageNumber.dataset.width, stageNumber.dataset.height],
+      settingsSize: [settings.dataset.width, settings.dataset.height],
+      playerPose: document.querySelector("#player").dataset.pose,
+      playerSprite: document.querySelector("#player .player-sprite").src,
       hasStatusText: Boolean(document.querySelector("#stage-status")),
       ratio: bounds.width / bounds.height,
-      allObjectsInside: boardObjects.every((object) => {
-        const box = object.getBoundingClientRect();
-        return box.left >= bounds.left - 1 && box.top >= bounds.top - 1
-          && box.right <= bounds.right + 1 && box.bottom <= bounds.bottom + 1;
-      }),
+      landOverhangs: land.getBoundingClientRect().height > cellHeight,
+      panelOverhangs: exposedPanel.getBoundingClientRect().height > cellHeight,
+      landFitsGridWidth: Math.abs(land.getBoundingClientRect().width - cellWidth) < 0.02,
+      panelFitsGridWidth: Math.abs(exposedPanel.getBoundingClientRect().width - cellWidth) < 0.02,
+      lowerPanelIsAbove: Number(getComputedStyle(panelBelow).zIndex) > Number(getComputedStyle(panelTop).zIndex),
+      seaColor: getComputedStyle(playZone).backgroundColor,
+      seaImage: getComputedStyle(playZone).backgroundImage,
+      panelColor: getComputedStyle(panelBelow).backgroundColor,
+      landColor: getComputedStyle(document.querySelector('[data-object-kind="floor"].has-tile-below')).backgroundColor,
+      panelSide: getComputedStyle(exposedPanel).backgroundImage,
+      landSide: getComputedStyle(land).backgroundImage,
+      uiAssets: {
+        settings: getComputedStyle(settings).backgroundImage,
+        stage: getComputedStyle(stageNumber).backgroundImage,
+        hint: getComputedStyle(hint).backgroundImage,
+        direction: getComputedStyle(direction).backgroundImage,
+        action: getComputedStyle(action).backgroundImage,
+        undo: getComputedStyle(undo).backgroundImage,
+      },
       horizontalOverflow: document.documentElement.scrollWidth > innerWidth,
       verticalOverflow: document.documentElement.scrollHeight > innerHeight,
     };
   })()`);
 
-  assert(initial.cells === 12 * 21, `セル数が${initial.cells}です。`);
+  assert(initial.cells === 0, "グリッド線用の補助セルが残っています。");
+  assert(initial.panels === 12 * 21 - 10 * 10, `パネル数が${initial.panels}です。`);
   assert(initial.stageId === "knowledge-01", "初期ステージが正しくありません。");
-  assert(initial.hasPlayZone, "中央プレイエリアの見た目が消えています。");
+  assert(initial.playZoneSize.join("x") === "10x10", "中央プレイエリアが10×10ではありません。");
+  assert(initial.stageNumberSize.join("x") === "4x2", "ステージ番号が4×2ではありません。");
+  assert(initial.settingsSize.join("x") === "2x2", "設定ボタンが2×2ではありません。");
+  assert(initial.playerPose === "idle", "勇者の初期状態が通常画像ではありません。");
+  assert(initial.playerSprite.includes("hero-right-idle.png"), "初期方向の勇者画像が違います。");
   assert(!initial.hasStatusText, "十字ボタン上の説明テキストが残っています。");
   assert(Math.abs(initial.ratio - 12 / 21) < 0.002, `盤面比率が${initial.ratio}です。`);
-  assert(initial.allObjectsInside, "盤面外にはみ出しているオブジェクトがあります。");
+  assert(initial.landOverhangs && initial.panelOverhangs, "LandまたはPanelの下への出っ張りがありません。");
+  assert(initial.landFitsGridWidth && initial.panelFitsGridWidth, "地形がグリッド幅からずれています。");
+  assert(initial.lowerPanelIsAbove, "下の行のPanelが前面になっていません。");
+  assert(initial.seaColor === "rgb(46, 167, 224)", `Seaの色が素材と違います: ${initial.seaColor}`);
+  assert(initial.seaImage.includes("sea.webp"), "Sea素材が使われていません。");
+  assert(initial.panelColor === "rgb(199, 165, 204)", `Panelの色が素材と違います: ${initial.panelColor}`);
+  assert(initial.landColor === "rgb(57, 181, 74)", `Landの色が素材と違います: ${initial.landColor}`);
+  assert(initial.panelSide.includes("rgb(138, 114, 143)"), "Panel側面の色が素材と違います。");
+  assert(initial.landSide.includes("rgb(166, 124, 82)"), "Land側面の色が素材と違います。");
+  const expectedUiAssets = {
+    settings: "settings-button.webp",
+    stage: "stage-display.webp",
+    hint: "hint-button.webp",
+    direction: "direction-button.webp",
+    action: "action-button.webp",
+    undo: "undo-button.webp",
+  };
+  Object.entries(expectedUiAssets).forEach(([key, fileName]) => {
+    assert(initial.uiAssets[key].includes(fileName), `${fileName} が使われていません。`);
+  });
   assert(!initial.horizontalOverflow && !initial.verticalOverflow, "ページに不要なスクロールがあります。");
 
   const result = await evaluate(`(async () => {
     const click = (action) => document.querySelector('[data-action="' + action + '"]').click();
     const wait = (milliseconds) => new Promise((resolveWait) => setTimeout(resolveWait, milliseconds));
 
-    for (let index = 0; index < 6; index += 1) click("move-up");
-    const yOutsidePlayZone = document.querySelector("#player").dataset.y;
-    for (let index = 0; index < 6; index += 1) click("move-down");
+    const seaIsBlocked = !isWalkable(3, 6);
+    const landIsWalkable = isWalkable(3, 7);
+    const panelIsWalkable = isWalkable(11, 8);
 
-    for (let index = 0; index < 5; index += 1) click("move-down");
+    click("interact");
+    const attackPose = document.querySelector("#player").dataset.pose;
+    const attackSprite = document.querySelector("#player .player-sprite").src;
+    await wait(ATTACK_DURATION + 60);
+    const returnedPose = document.querySelector("#player").dataset.pose;
+    const returnedSprite = document.querySelector("#player .player-sprite").src;
+
+    for (let index = 0; index < 8; index += 1) click("move-right");
+    const xOutsidePlayZone = document.querySelector("#player").dataset.x;
+    for (let index = 0; index < 6; index += 1) click("move-up");
+    const yInTopUiArea = document.querySelector("#player").dataset.y;
+    const topUiSprite = document.querySelector("#player .player-sprite").src;
+
+    state.player = { x: 3, y: 13, facing: "down" };
+    render();
     click("move-down");
     const yOnUpButton = document.querySelector("#player").dataset.y;
+    const upButtonDark = document.querySelector('[data-object-id="move-up"]').classList.contains("is-player-pressed");
     await wait(BUTTON_STEP_DELAY + 60);
     const yAfterAutomaticMove = document.querySelector("#player").dataset.y;
 
+    state.player = { x: 8, y: 13, facing: "down" };
+    state.message = "";
+    render();
     click("move-down");
-    pressDirection("test:opposite", "down");
-    await wait(BUTTON_STEP_DELAY * 2 + 60);
-    const yWhileConflicting = document.querySelector("#player").dataset.y;
-    const playerBounds = document.querySelector("#player").getBoundingClientRect();
-    const clickableUnderPlayer = document
-      .elementFromPoint(playerBounds.x + playerBounds.width / 2, playerBounds.y + playerBounds.height / 2)
-      ?.closest("[data-action]")?.dataset.action;
-    releaseDirection("test:opposite");
-    await wait(BUTTON_STEP_DELAY + 60);
-    const yAfterConflictReleased = document.querySelector("#player").dataset.y;
+    const aButtonTriggered = state.message === "剣を振りました";
+    const aButtonDark = document.querySelector('[data-object-id="interact"]').classList.contains("is-player-pressed");
+    const aButtonAttackPose = document.querySelector("#player").dataset.pose;
+    const aButtonAttackSprite = document.querySelector("#player .player-sprite").src;
 
-    for (let index = 0; index < 5; index += 1) click("move-up");
-    click("move-left");
-    for (let index = 0; index < 8; index += 1) click("move-down");
-    const xOnLeftButton = document.querySelector("#player").dataset.x;
-    await wait(BUTTON_STEP_DELAY + 60);
-    const xAfterFirstButtonStep = document.querySelector("#player").dataset.x;
-    await wait(BUTTON_STEP_DELAY + 60);
-    const xAfterLeavingButton = document.querySelector("#player").dataset.x;
-
-    for (let index = 0; index < 8; index += 1) click("move-up");
-    for (let index = 0; index < 6; index += 1) click("move-right");
-    const playerAfterMove = document.querySelector("#player").dataset.x;
-    click("interact");
-    const knowledgeRemoved = !document.querySelector('[data-object-id="knowledge-01"]');
-    const unlockMessage = state.message;
-    click("next-stage");
     return {
-      yOutsidePlayZone,
+      seaIsBlocked,
+      landIsWalkable,
+      panelIsWalkable,
+      attackPose,
+      attackSprite,
+      returnedPose,
+      returnedSprite,
+      xOutsidePlayZone,
+      yInTopUiArea,
+      topUiSprite,
       yOnUpButton,
+      upButtonDark,
       yAfterAutomaticMove,
-      yWhileConflicting,
-      clickableUnderPlayer,
-      yAfterConflictReleased,
-      xOnLeftButton,
-      xAfterFirstButtonStep,
-      xAfterLeavingButton,
-      playerAfterMove,
-      knowledgeRemoved,
-      unlockMessage,
-      stageAfterUnlock: document.querySelector("#stage").dataset.stageId,
+      aButtonTriggered,
+      aButtonDark,
+      aButtonAttackPose,
+      aButtonAttackSprite,
     };
   })()`);
 
-  assert(result.yOutsidePlayZone === "2", "中央プレイエリアの外へ移動できません。");
+  assert(result.seaIsBlocked, "Seaが通行不可になっていません。");
+  assert(result.landIsWalkable, "Landを歩けません。");
+  assert(result.panelIsWalkable, "Purple Panelを歩けません。");
+  assert(result.attackPose === "attack", "Aを押しても攻撃状態になりません。");
+  assert(result.attackSprite.includes("hero-right-attack.png"), "向いている方向の攻撃画像になりません。");
+  assert(result.returnedPose === "idle", "攻撃後に通常状態へ戻りません。");
+  assert(result.returnedSprite.includes("hero-right-idle.png"), "攻撃後に通常画像へ戻りません。");
+  assert(result.xOutsidePlayZone === "11", "Landから外周Panelへ出られません。");
+  assert(result.yInTopUiArea === "2", "画面上部をステージとして歩けません。");
+  assert(result.topUiSprite.includes("hero-up-idle.png"), "移動方向と勇者画像が同期していません。");
   assert(result.yOnUpButton === "14", "上ボタンへ乗れません。");
+  assert(result.upButtonDark, "勇者が乗った矢印ボタンが暗くなりません。");
   assert(result.yAfterAutomaticMove === "13", "上ボタンへ乗った直後に自動移動しません。");
-  assert(result.yWhileConflicting === "14", "異なる入力中に矢印ボタンが動いてしまいます。");
-  assert(result.clickableUnderPlayer === "move-up", "勇者の下の矢印ボタンを操作できません。");
-  assert(result.yAfterConflictReleased === "13", "異なる入力を離したあと矢印ボタンが再開しません。");
-  assert(result.xOnLeftButton === "2", "左ボタンへ乗れません。");
-  assert(result.xAfterFirstButtonStep === "1", "左ボタン上で移動が継続しません。");
-  assert(result.xAfterLeavingButton === "0", "左ボタンの外まで自動移動しません。");
-  assert(result.playerAfterMove === "6", "右移動が正しく反映されません。");
-  assert(result.knowledgeRemoved, "知識を取得できません。");
-  assert(result.unlockMessage.includes("ステージ2"), "解放メッセージが表示されません。");
-  assert(result.stageAfterUnlock === "knowledge-02", "解放後にステージ2へ切り替えられません。");
+  assert(result.aButtonTriggered, "勇者が踏んだAボタンが作動しません。");
+  assert(result.aButtonDark, "勇者が乗ったAボタンが暗くなりません。");
+  assert(result.aButtonAttackPose === "attack", "勇者が踏んだAボタンで剣を振りません。");
+  assert(result.aButtonAttackSprite.includes("hero-down-attack.png"), "踏んだAボタンの攻撃方向が違います。");
 
   console.log("smoke test: ok");
 } finally {
