@@ -9,12 +9,34 @@
   </head>
   <body>
     <main class="game-shell">
-      <section
-        id="stage"
-        class="stage"
-        aria-label="11列19行のゲーム盤面"
-        aria-describedby="keyboard-help"
-      ></section>
+      <div class="game-frame">
+        <header class="top-hud" aria-label="ステージ情報と字幕">
+          <button class="hud-button hud-button--settings" type="button" data-action="settings" aria-label="設定"></button>
+
+          <div class="hud-stage-title" aria-label="現在のステージ">
+            Stage <span id="hud-stage-number">1</span>
+          </div>
+
+          <button class="hud-button hud-button--hint" type="button" data-action="hint" aria-label="ヒント"></button>
+
+          <section id="dialogue-box" class="dialogue-box" aria-live="polite" aria-atomic="true">
+            <div class="dialogue-portrait-frame" aria-hidden="true">
+              <img id="dialogue-portrait" class="dialogue-portrait" src="asset/hero-right-idle.png" alt="">
+            </div>
+            <div class="dialogue-copy">
+              <div id="dialogue-speaker" class="dialogue-speaker">勇者</div>
+              <p id="dialogue-text" class="dialogue-text">読み込み中...</p>
+            </div>
+          </section>
+        </header>
+
+        <section
+          id="stage"
+          class="stage"
+          aria-label="11列18行のゲーム盤面"
+          aria-describedby="keyboard-help"
+        ></section>
+      </div>
 
       <p id="keyboard-help" class="visually-hidden">
         矢印キーで移動、AキーまたはEnterキーで剣を振る、Uキーで一手戻します。

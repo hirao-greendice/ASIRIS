@@ -1,0 +1,519 @@
+{
+  "version": 2,
+  "initialStageId": "stage-01",
+  "mapLegend": {
+    ".": "地形を置かない（中央9×9ではSEA、それ以外ではPurple Panel）",
+    "#": "Land",
+    "O": "穴",
+    "^ > v <": "勇者の開始位置と向き",
+    "W": "ワープポイント",
+    "S": "スライム",
+    "B / b": "ボス（大文字はLand上、小文字はPurple Panel上）",
+    "U R D L": "自動移動する方向パネル"
+  },
+  "dialogueDefaults": {
+    "characterIntervalMs": 38,
+    "startDelayMs": 280
+  },
+  "speakers": {
+    "guide": {
+      "name": "ミリしらソード君",
+      "portrait": "asset/sword-guide.png",
+      "nameColor": "#fff200"
+    },
+    "system": {
+      "name": "SYSTEM",
+      "portrait": "asset/settings-button.webp",
+      "nameColor": "#9fe7ff"
+    },
+    "hero": {
+      "name": "勇者",
+      "portrait": "asset/hero-right-idle.png",
+      "nameColor": "#ffffff"
+    }
+  },
+  "stages": [
+    {
+      "id": "stage-01",
+      "number": 1,
+      "hint": "右側のワープポイントを目指しましょう。",
+      "map": [
+        "...........",
+        "...........",
+        ".#W...###..",
+        "......###..",
+        "..###......",
+        "..#>####W..",
+        "..###......",
+        ".......##..",
+        "...##..##..",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "..........."
+      ],
+      "objects": {
+        "warps": [
+          { "id": "warp-01-upper", "label": "上側のワープポイント" },
+          { "id": "warp-01-out", "label": "Stage 2へのワープポイント" }
+        ]
+      },
+      "warpRoutes": {
+        "warp-01-out": {
+          "right": { "stageId": "stage-02", "warpId": "warp-02-in" }
+        }
+      }
+    },
+    {
+      "id": "stage-02",
+      "number": 2,
+      "hint": "スライムをAで倒し、右側のワープポイントまで進みましょう。",
+      "map": [
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "..W>#S##W..",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "..........."
+      ],
+      "objects": {
+        "warps": [
+          { "id": "warp-02-in", "label": "Stage 1へのワープポイント" },
+          { "id": "warp-02-out", "label": "Stage 3へのワープポイント" }
+        ],
+        "slimes": [
+          { "id": "slime-02", "label": "スライム" }
+        ]
+      },
+      "warpRoutes": {
+        "warp-02-in": {
+          "left": { "stageId": "stage-01", "warpId": "warp-01-out" }
+        },
+        "warp-02-out": {
+          "right": { "stageId": "stage-03", "warpId": "warp-03-in" }
+        }
+      }
+    },
+    {
+      "id": "stage-03",
+      "number": 3,
+      "hint": "横道だけでなく、下側のワープポイントも調べてみましょう。",
+      "map": [
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "..W>#S##W..",
+        "......##...",
+        "......#W...",
+        "......##...",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "..........."
+      ],
+      "objects": {
+        "warps": [
+          { "id": "warp-03-in", "label": "Stage 2へのワープポイント" },
+          { "id": "warp-03-out", "label": "Stage 4へのワープポイント" },
+          { "id": "warp-03-lower", "label": "下側のワープポイント" }
+        ],
+        "slimes": [
+          { "id": "slime-03", "label": "スライム" }
+        ]
+      },
+      "warpRoutes": {
+        "warp-03-in": {
+          "left": { "stageId": "stage-02", "warpId": "warp-02-out" }
+        },
+        "warp-03-out": {
+          "right": { "stageId": "stage-04", "warpId": "warp-04-in" }
+        }
+      }
+    },
+    {
+      "id": "stage-04",
+      "number": 4,
+      "hint": "右側のワープポイントから次へ進めます。",
+      "map": [
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "..W>#S##W..",
+        "......##...",
+        "......#W...",
+        "......##...",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "..........."
+      ],
+      "objects": {
+        "warps": [
+          { "id": "warp-04-in", "label": "Stage 3へのワープポイント" },
+          { "id": "warp-04-out", "label": "Stage 5へのワープポイント" },
+          { "id": "warp-04-lower", "label": "分岐ワープポイント" }
+        ],
+        "slimes": [
+          { "id": "slime-04", "label": "スライム" }
+        ]
+      },
+      "warpRoutes": {
+        "warp-04-in": {
+          "left": { "stageId": "stage-03", "warpId": "warp-03-out" }
+        },
+        "warp-04-out": {
+          "right": { "stageId": "stage-05", "warpId": "warp-05-in" }
+        },
+        "warp-04-lower": {
+          "up": { "stageId": "stage-04-2", "warpId": "warp-04-2-lower" },
+          "right": { "stageId": "stage-05", "warpId": "warp-05-lower" },
+          "left": { "stageId": "stage-03", "warpId": "warp-03-lower" }
+        }
+      }
+    },
+    {
+      "id": "stage-05",
+      "number": 5,
+      "hint": "右上のワープポイントは、上へ入ると次のステージにつながります。",
+      "map": [
+        "...........",
+        "...........",
+        "...##...W..",
+        "...##.###..",
+        "...##.#B#..",
+        "..W>#.###..",
+        "...##.###..",
+        "..W##.###..",
+        "...##.###..",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "..........."
+      ],
+      "objects": {
+        "warps": [
+          { "id": "warp-05-out", "label": "Stage 6へのワープポイント" },
+          { "id": "warp-05-in", "label": "Stage 4へのワープポイント" },
+          { "id": "warp-05-lower", "label": "左下のワープポイント" }
+        ],
+        "bosses": [
+          { "id": "boss-05", "label": "魔王" }
+        ]
+      },
+      "warpRoutes": {
+        "warp-05-in": {
+          "up": { "stageId": "stage-06", "warpId": "warp-06-left" },
+          "left": { "stageId": "stage-04", "warpId": "warp-04-out" }
+        },
+        "warp-05-lower": {
+          "left": { "stageId": "stage-04", "warpId": "warp-04-lower" }
+        },
+        "warp-05-out": {
+          "up": { "stageId": "stage-06", "warpId": "warp-06-main" },
+          "left": { "stageId": "stage-01", "warpId": "warp-01-upper" }
+        }
+      }
+    },
+    {
+      "id": "stage-06",
+      "number": 6,
+      "hint": "小さな矢印を踏むと、その矢印が勇者を動かします。",
+      "map": [
+        "...........",
+        "...........",
+        "..##v####..",
+        "..####R#D..",
+        "..#R#D#L#..",
+        "..W#L#U#W..",
+        "..#U#R#D#..",
+        "..R#D#L##..",
+        "..UL#URLD..",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "..........."
+      ],
+      "objects": {
+        "warps": [
+          { "id": "warp-06-left", "label": "左側のワープポイント" },
+          { "id": "warp-06-main", "label": "Stage 5・7につながるワープポイント" }
+        ],
+        "directionIds": [
+          "arrow-06-01", "arrow-06-02", "arrow-06-03", "arrow-06-04", "arrow-06-05",
+          "arrow-06-06", "arrow-06-07", "arrow-06-08", "arrow-06-09", "arrow-06-10",
+          "arrow-06-11", "arrow-06-12", "arrow-06-13", "arrow-06-14", "arrow-06-15",
+          "arrow-06-16", "arrow-06-17", "arrow-06-18", "arrow-06-19"
+        ]
+      },
+      "warpRoutes": {
+        "warp-06-left": {
+          "left": { "stageId": "stage-04-2", "warpId": "warp-04-2-out" }
+        },
+        "warp-06-main": {
+          "right": { "stageId": "stage-07", "warpId": "warp-07-in" },
+          "down": { "stageId": "stage-05", "warpId": "warp-05-out" }
+        }
+      }
+    },
+    {
+      "id": "stage-07",
+      "number": 7,
+      "hint": "中央の青い範囲だけがステージとは限りません。ピンクの部分も歩けます。",
+      "map": [
+        "...........",
+        "...........",
+        "..#######..",
+        "..#######..",
+        "..#######..",
+        "..WR>####..",
+        "..#######..",
+        "..#######..",
+        "..#######..",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "....b......",
+        "...........",
+        "...........",
+        "...........",
+        "..........."
+      ],
+      "objects": {
+        "warps": [
+          { "id": "warp-07-in", "label": "Stage 6へのワープポイント" }
+        ],
+        "bosses": [
+          { "id": "boss-07", "label": "画面の外にいる魔王" }
+        ],
+        "directionIds": ["arrow-07-right"]
+      },
+      "warpRoutes": {
+        "warp-07-in": {
+          "left": { "stageId": "stage-06", "warpId": "warp-06-main" }
+        }
+      }
+    },
+    {
+      "id": "stage-04-2",
+      "number": 4,
+      "substage": 2,
+      "hint": "Stage 4とほぼ同じですが、上方向のワープ先が異なります。",
+      "map": [
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "..W>#S##W..",
+        "......##...",
+        "......#W...",
+        "......##...",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "..........."
+      ],
+      "objects": {
+        "warps": [
+          { "id": "warp-04-2-in", "label": "左側のワープポイント" },
+          { "id": "warp-04-2-out", "label": "右側のワープポイント" },
+          { "id": "warp-04-2-lower", "label": "Stage 4・4-3につながるワープポイント" }
+        ],
+        "slimes": [
+          { "id": "slime-04-2", "label": "スライム" }
+        ]
+      },
+      "warpRoutes": {
+        "warp-04-2-out": {
+          "right": { "stageId": "stage-06", "warpId": "warp-06-left" }
+        },
+        "warp-04-2-lower": {
+          "up": { "stageId": "stage-04-3", "warpId": "warp-04-3-lower" },
+          "down": { "stageId": "stage-04", "warpId": "warp-04-lower" }
+        }
+      }
+    },
+    {
+      "id": "stage-04-3",
+      "number": 4,
+      "substage": 3,
+      "hint": "AとUの位置が、これまでの画面と少し違います。",
+      "screenObjectOverrides": {
+        "interact": { "x": 9 },
+        "undo": { "x": 9 }
+      },
+      "map": [
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "..W>#S##W..",
+        "......##...",
+        "......#W...",
+        "......##...",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "...........",
+        "..........."
+      ],
+      "objects": {
+        "warps": [
+          { "id": "warp-04-3-in", "label": "左側のワープポイント" },
+          { "id": "warp-04-3-out", "label": "右側のワープポイント" },
+          { "id": "warp-04-3-lower", "label": "Stage 4-2へのワープポイント" }
+        ],
+        "slimes": [
+          { "id": "slime-04-3", "label": "スライム" }
+        ]
+      },
+      "warpRoutes": {
+        "warp-04-3-lower": {
+          "down": { "stageId": "stage-04-2", "warpId": "warp-04-2-lower" }
+        }
+      }
+    }
+  ],
+  "dialogues": {
+    "stage-01": [
+      {
+        "id": "stage-01-start",
+        "trigger": { "event": "stage-start" },
+        "speaker": "guide",
+        "delayMs": 320,
+        "text": "あの人、多分『魔王を倒しに行け』って言ってそうだな"
+      }
+    ],
+    "stage-02": [
+      {
+        "id": "stage-02-start",
+        "trigger": { "event": "stage-start" },
+        "speaker": "guide",
+        "text": "スライムが道をふさいでいる。Aで剣を振れるぞ"
+      },
+      {
+        "id": "stage-02-slime-down",
+        "trigger": { "event": "enemy-defeated", "targetId": "slime-02" },
+        "speaker": "hero",
+        "delayMs": 120,
+        "text": "これで先へ進めるな"
+      }
+    ],
+    "stage-03": [
+      {
+        "id": "stage-03-start",
+        "trigger": { "event": "stage-start" },
+        "speaker": "guide",
+        "text": "同じような盤面だが、ワープは一つじゃないみたいだ"
+      }
+    ],
+    "stage-04": [
+      {
+        "id": "stage-04-start",
+        "trigger": { "event": "stage-start" },
+        "speaker": "guide",
+        "text": "入る方向によって、ワープ先が変わることもあるぞ"
+      }
+    ],
+    "stage-05": [
+      {
+        "id": "stage-05-start",
+        "trigger": { "event": "stage-start" },
+        "speaker": "guide",
+        "text": "右上のワープには、下から入ってみよう"
+      }
+    ],
+    "stage-06": [
+      {
+        "id": "stage-06-start",
+        "trigger": { "event": "stage-start" },
+        "speaker": "guide",
+        "text": "矢印を踏むと、その向きへ自動で動くようだ"
+      }
+    ],
+    "stage-07": [
+      {
+        "id": "stage-07-start",
+        "trigger": { "event": "stage-start" },
+        "speaker": "guide",
+        "delayMs": 500,
+        "characterIntervalMs": 48,
+        "text": "……待て。青い盤面の外、ピンクの場所にも何かいるぞ"
+      },
+      {
+        "id": "stage-07-boss-down",
+        "trigger": { "event": "enemy-defeated", "targetId": "boss-07" },
+        "speaker": "hero",
+        "text": "画面の外まで、全部ステージだったのか"
+      }
+    ],
+    "stage-04-2": [
+      {
+        "id": "stage-04-2-start",
+        "trigger": { "event": "stage-start" },
+        "speaker": "guide",
+        "text": "見覚えのある場所だが、別の独立したステージだ"
+      }
+    ],
+    "stage-04-3": [
+      {
+        "id": "stage-04-3-start",
+        "trigger": { "event": "stage-start" },
+        "speaker": "guide",
+        "text": "操作ボタンの位置まで、いつも同じとは限らないぞ"
+      }
+    ]
+  }
+}
