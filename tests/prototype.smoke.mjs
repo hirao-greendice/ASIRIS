@@ -141,14 +141,112 @@ try {
     const action = document.querySelector('[data-object-id="interact"]');
     const undo = document.querySelector('[data-object-id="undo"]');
     const warp = document.querySelector('[data-object-kind="warp"]');
+    const slime = document.querySelector('[data-object-kind="slime"]');
     const cellHeight = bounds.height / 19;
     const cellWidth = bounds.width / 11;
+    const mainStages = STAGES.filter((entry) => entry.substage === undefined);
+    const stage41 = STAGES.find((entry) => entry.id === "stage-04");
+    const stage42 = STAGES.find((entry) => entry.id === "stage-04-2");
+    const stage43 = STAGES.find((entry) => entry.id === "stage-04-3");
+    const layoutSignature = (entry) => JSON.stringify({
+      floor: entry.floor,
+      objects: entry.objects.map((object) => ({
+        kind: object.kind,
+        x: object.x,
+        y: object.y,
+      })),
+    });
+    const routeExists = (entry) => {
+      const floor = new Set(entry.floor.map((cell) => cell.x + "," + cell.y));
+      const outgoingWarp = entry.objects.find((object) => object.id === entry.exitWarpId);
+      const destination = outgoingWarp.x + "," + outgoingWarp.y;
+      const queue = [[entry.start.x, entry.start.y]];
+      const visited = new Set();
+
+      while (queue.length) {
+        const [x, y] = queue.shift();
+        const key = x + "," + y;
+        if (visited.has(key) || !floor.has(key)) continue;
+        if (key === destination) return true;
+        visited.add(key);
+        queue.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+      }
+      return false;
+    };
     return {
       cells: document.querySelectorAll(".board-cell").length,
       panels: document.querySelectorAll('[data-object-kind="panel"]').length,
       seas: document.querySelectorAll('[data-object-kind="sea"]').length,
       warps: document.querySelectorAll('[data-object-kind="warp"]').length,
+      slimes: document.querySelectorAll('[data-object-kind="slime"]').length,
       stageId: stage.dataset.stageId,
+      stageCount: STAGES.length,
+      warpCounts: STAGES.map((entry) => entry.objects.filter((object) => object.kind === "warp").length),
+      hasRemovedKnowledge: STAGES.every((entry) => (
+        entry.objects.every((object) => object.kind !== "knowledge" && object.symbol !== "知")
+      )),
+      landIsDetachedFromPanel: STAGES.every((entry) => (
+        entry.floor.every((cell) => cell.x >= 2 && cell.x <= 8 && cell.y >= 3 && cell.y <= 9)
+      )),
+      warpChainIsConnected: mainStages.slice(0, -1).every((entry, index) => {
+        const stageIndex = STAGES.indexOf(entry);
+        const nextStage = mainStages[index + 1];
+        const outgoingWarp = entry.objects.find((object) => object.id === entry.exitWarpId);
+        const destination = nearestWarpInDirection(stageIndex, outgoingWarp, entry.exitDirection);
+        const exit = destination && walkableStepFrom(
+          destination.stageIndex,
+          destination.warp.x,
+          destination.warp.y,
+          entry.exitDirection,
+        );
+        return destination?.stageIndex === STAGES.indexOf(nextStage)
+          && destination.warp.id === nextStage.entryWarpId
+          && Boolean(exit);
+      }),
+      warpChainIsReversible: mainStages.slice(1).every((entry, offset) => {
+        const stageIndex = STAGES.indexOf(entry);
+        const previousStage = mainStages[offset];
+        const incomingWarp = entry.objects.find((object) => object.id === entry.entryWarpId);
+        const reverseDirections = { up: "down", right: "left", down: "up", left: "right" };
+        const reverseDirection = reverseDirections[previousStage.exitDirection];
+        const destination = nearestWarpInDirection(stageIndex, incomingWarp, reverseDirection);
+        const exit = destination && walkableStepFrom(
+          destination.stageIndex,
+          destination.warp.x,
+          destination.warp.y,
+          reverseDirection,
+        );
+        return destination?.stageIndex === STAGES.indexOf(previousStage)
+          && destination.warp.id === previousStage.exitWarpId
+          && Boolean(exit);
+      }),
+      earlyStageRoutesAreConnected: STAGES.slice(0, 4).every(routeExists),
+      entitiesAreOnLand: STAGES.every((entry) => {
+        const floor = new Set(entry.floor.map((cell) => cell.x + "," + cell.y));
+        return entry.objects
+          .filter((object) => object.kind !== "boss")
+          .every((object) => floor.has(object.x + "," + object.y));
+      }),
+      stage6DirectionCount: STAGES[5].objects.filter((object) => object.kind === "direction").length,
+      stage7HasOutsideBoss: STAGES[6].objects.some((object) => (
+        object.kind === "boss" && object.y >= 11
+      )),
+      stage4StackPositions: [stage41, stage42, stage43]
+        .map((entry) => entry.position.x + "," + entry.position.y),
+      stage42MatchesStage41: layoutSignature(stage42) === layoutSignature(stage41),
+      stage43MatchesStage41: layoutSignature(stage43) === layoutSignature(stage41),
+      stage43ActionPositions: (() => {
+        const objects = screenObjectsForStage(STAGES.indexOf(stage43));
+        const interact = objects.find((object) => object.id === "interact");
+        const undoObject = objects.find((object) => object.id === "undo");
+        return [interact.x, undoObject.x];
+      })(),
+      stage42ActionPositions: (() => {
+        const objects = screenObjectsForStage(STAGES.indexOf(stage42));
+        const interact = objects.find((object) => object.id === "interact");
+        const undoObject = objects.find((object) => object.id === "undo");
+        return [interact.x, undoObject.x];
+      })(),
       playZoneSize: [playZone.dataset.width, playZone.dataset.height],
       playZonePosition: [playZone.dataset.x, playZone.dataset.y],
       stageNumberSize: [stageNumber.dataset.width, stageNumber.dataset.height],
@@ -188,6 +286,7 @@ try {
       ) < 0.02,
       warpLogicalSize: [warp.dataset.width, warp.dataset.height],
       warpSprite: warp.querySelector(".warp-point__sprite").src,
+      slimeSpritePath: SLIME_SPRITE_PATH,
       footstepSoundSource: footstepAudio.src,
       warpSoundSource: warpAudio.src,
       footstepSnippetDuration: FOOTSTEP_SNIPPET_DURATION,
@@ -226,8 +325,24 @@ try {
   assert(initial.cells === 0, "グリッド線用の補助セルが残っています。");
   assert(initial.panels === 11 * 19 - 9 * 9, `パネル数が${initial.panels}です。`);
   assert(initial.seas === 9 * 9, `Seaタイル数が${initial.seas}です。`);
-  assert(initial.warps === 1, `表示中のワープポイント数が${initial.warps}です。`);
-  assert(initial.stageId === "knowledge-01", "初期ステージが正しくありません。");
+  assert(initial.warps === 2, `表示中のワープポイント数が${initial.warps}です。`);
+  assert(initial.slimes === 0, `Stage 1-1にスライムが${initial.slimes}体います。`);
+  assert(initial.stageId === "stage-01", "初期ステージが正しくありません。");
+  assert(initial.stageCount === 9, `ステージ数が${initial.stageCount}です。`);
+  assert(initial.warpCounts.join(",") === "2,2,3,3,3,2,1,3,3", "各ステージのワープ数が違います。");
+  assert(initial.hasRemovedKnowledge, "知のオブジェクトが残っています。");
+  assert(initial.landIsDetachedFromPanel, "Stage 1-1から7-1のLandがPanelに接しています。");
+  assert(initial.warpChainIsConnected, "ステージ間のワープが順番につながっていません。");
+  assert(initial.warpChainIsReversible, "前のステージへ戻るワープの出口がつながっていません。");
+  assert(initial.earlyStageRoutesAreConnected, "Stage 1-1から4-1の入口と出口がLandでつながっていません。");
+  assert(initial.entitiesAreOnLand, "Landの外にスライムまたはワープがあります。");
+  assert(initial.stage6DirectionCount === 19, "Stage 6-1の盤面内矢印が揃っていません。");
+  assert(initial.stage7HasOutsideBoss, "Stage 7-1の盤面外に魔王が配置されていません。");
+  assert(initial.stage4StackPositions.join("|") === "3,0|3,-1|3,-2", "Stage 4-1〜4-3が縦に並んでいません。");
+  assert(initial.stage42MatchesStage41, "Stage 4-2の盤面がStage 4-1と一致しません。");
+  assert(initial.stage43MatchesStage41, "Stage 4-3の盤面がStage 4-1と一致しません。");
+  assert(initial.stage42ActionPositions.join(",") === "8,8", "Stage 4-2のA/U配置が通常位置ではありません。");
+  assert(initial.stage43ActionPositions.join(",") === "9,9", "Stage 4-3のA/Uが右端へ移動していません。");
   assert(initial.playZoneSize.join("x") === "9x9", "中央プレイエリアが9×9ではありません。");
   assert(initial.playZonePosition.join(",") === "1,2", "中央プレイエリアが上から3行目にありません。");
   assert(initial.stageNumberSize.join("x") === "7x2", "ステージ番号が7×2ではありません。");
@@ -257,6 +372,7 @@ try {
   assert(initial.seaTilesTouch, "Seaタイル同士の位置がずれています。");
   assert(initial.warpLogicalSize.join("x") === "1x1", "ワープポイントの論理サイズが1マスではありません。");
   assert(initial.warpSprite.includes("warp-point.png"), "追加されたワープポイント素材が使われていません。");
+  assert(initial.slimeSpritePath.includes("22283729.png"), "追加されたスライム素材が設定されていません。");
   assert(initial.topUiVisualsInset, "上部UIの画像に論理判定内の余白がありません。");
   assert(initial.stageNumberIsHorizontal, "ステージ番号が横並びではありません。");
   assert(initial.panelColor === "rgb(199, 165, 204)", `Panelの色が素材と違います: ${initial.panelColor}`);
@@ -299,8 +415,8 @@ try {
       pausedSoundPaths.push(this.currentSrc || this.src);
     };
 
-    const seaIsBlocked = !isWalkable(3, 5);
-    const landIsWalkable = isWalkable(3, 6);
+    const seaIsBlocked = !isWalkable(5, 5);
+    const landIsWalkable = isWalkable(4, 6);
     const panelIsWalkable = isWalkable(10, 7);
 
     window.clearInterval(environmentFlipTimer);
@@ -531,7 +647,7 @@ try {
       && movementFrames[0].transform !== movementFrames[1].transform
       && movementAnimation.effect.getTiming().duration === PLAYER_MOVE_DURATION;
     state.player = { x: 9, y: 7, facing: "right" };
-    state.warpArrivalKey = warpKey(0, warpAt(0, 9, 7));
+    state.warpArrivalKey = null;
     state.lastRenderedPlayer = null;
     render();
     click("move-right");
@@ -558,7 +674,7 @@ try {
     const aButtonAttackSprite = document.querySelector("#player .player-sprite").src;
 
     resetPlayer();
-    state.player = { x: 8, y: 7, facing: "right" };
+    state.player = { x: 7, y: 6, facing: "right" };
     render();
     const warpPlayCountBeforeActivation = playedSoundPaths
       .filter((path) => path.includes("asset/warp.mp3")).length;
@@ -571,8 +687,8 @@ try {
     );
     click("move-left");
     const inputBlockedWhileActivating = state.currentStageIndex === 0
-      && state.player.x === 9
-      && state.player.y === 7;
+      && state.player.x === 8
+      && state.player.y === 6;
     await wait(WARP_ACTIVATION_DELAY + 30);
     const warpSoundPlayedOnActivation = playedSoundPaths
       .filter((path) => path.includes("asset/warp.mp3")).length > warpPlayCountBeforeActivation;
@@ -600,23 +716,14 @@ try {
     const warpSequenceFinished = state.pendingWarpExit === null;
     undo();
     const undoAfterWarp = state.currentStageIndex === 0
-      && state.player.x === 8
-      && state.player.y === 7;
+      && state.player.x === 7
+      && state.player.y === 6;
 
     state.currentStageIndex = 1;
-    state.player = { x: 8, y: 7, facing: "right" };
+    state.player = { x: 3, y: 6, facing: "left" };
     state.history = [];
     state.lastRenderedPlayer = null;
     render();
-    click("move-right");
-    const secondWarpSourceStage = state.currentStageIndex;
-    await wait(WARP_ACTIVATION_DELAY + 30);
-    const secondWarpArrivalStage = state.currentStageIndex;
-    const secondWarpArrivalPosition = [state.player.x, state.player.y];
-    await wait(WARP_EXIT_DELAY + PLAYER_MOVE_DURATION + 30);
-    const secondWarpStage = state.currentStageIndex;
-    const secondWarpPosition = [state.player.x, state.player.y];
-
     click("move-left");
     const reverseWarpSourceStage = state.currentStageIndex;
     await wait(WARP_ACTIVATION_DELAY + 30);
@@ -625,7 +732,21 @@ try {
     await wait(WARP_EXIT_DELAY + PLAYER_MOVE_DURATION + 30);
     const reverseWarpStage = state.currentStageIndex;
     const reverseWarpPosition = [state.player.x, state.player.y];
-    const upwardWarp = nearestWarpInDirection(1, warpAt(1, 9, 7), "up");
+    const upwardWarp = nearestWarpInDirection(0, warpAt(0, 8, 6), "up");
+
+    clearWarpExit();
+    state.currentStageIndex = 1;
+    state.player = { x: 4, y: 6, facing: "right" };
+    state.history = [];
+    state.lastRenderedPlayer = null;
+    const slimeBlocksMovement = !isWalkable(5, 6, 1);
+    render();
+    const slimeSpriteWasUsed = document.querySelector('[data-object-id="slime-02"] .slime-sprite')
+      .src.includes("22283729.png");
+    click("interact");
+    const slimeWasDefeated = state.defeatedEnemies.has("slime-02")
+      && !document.querySelector('[data-object-id="slime-02"]')
+      && isWalkable(5, 6, 1);
 
     resetPlayer();
     state.player = { x: 10, y: 0, facing: "right" };
@@ -637,6 +758,79 @@ try {
     const undoAcrossStage = state.currentStageIndex === 0
       && state.player.x === 10
       && state.player.y === 0;
+
+    const debugArrow = (key, code) => window.dispatchEvent(new KeyboardEvent("keydown", {
+      key,
+      code,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    }));
+    loadStage(0);
+    const debugRightWasHandled = !debugArrow("ArrowRight", "ArrowRight");
+    const debugMovedToStage2 = state.currentStageIndex === 1
+      && state.player.x === STAGES[1].start.x
+      && state.player.y === STAGES[1].start.y
+      && state.history.length === 0;
+    loadStage(4);
+    debugArrow("ArrowUp", "ArrowUp");
+    const debugMovedFrom5To6 = state.currentStageIndex === 5;
+    debugArrow("ArrowRight", "ArrowRight");
+    const debugMovedFrom6To7 = state.currentStageIndex === 6;
+    debugArrow("ArrowLeft", "ArrowLeft");
+    const debugMovedFrom7To6 = state.currentStageIndex === 5;
+    debugArrow("ArrowDown", "ArrowDown");
+    const debugMovedFrom6To5 = state.currentStageIndex === 4;
+    loadStage(0);
+    debugArrow("ArrowLeft", "ArrowLeft");
+    const debugStopsAtMissingStage = state.currentStageIndex === 0
+      && state.message.includes("ステージはありません");
+
+    loadStage(3);
+    debugArrow("ArrowUp", "ArrowUp");
+    const debugMovedFrom41To42 = currentStage().id === "stage-04-2";
+    const stage42Number = document.querySelector(".stage-number__value").textContent;
+    const stage42RenderedActions = [
+      document.querySelector('[data-object-id="interact"]').dataset.x,
+      document.querySelector('[data-object-id="undo"]').dataset.x,
+    ];
+    debugArrow("ArrowUp", "ArrowUp");
+    const debugMovedFrom42To43 = currentStage().id === "stage-04-3";
+    const stage43Number = document.querySelector(".stage-number__value").textContent;
+    const stage43RenderedActions = [
+      document.querySelector('[data-object-id="interact"]').dataset.x,
+      document.querySelector('[data-object-id="undo"]').dataset.x,
+    ];
+    debugArrow("ArrowDown", "ArrowDown");
+    const debugMovedFrom43To42 = currentStage().id === "stage-04-2";
+
+    loadStage(5);
+    const fieldDirectionCount = document.querySelectorAll('[data-object-kind="direction"]').length;
+    const fieldDirectionUsesAsset = document
+      .querySelector('[data-object-id="arrow-06-01"] .field-direction__sprite')
+      .src.includes("direction-button.webp");
+    state.player = { x: 5, y: 4, facing: "right" };
+    state.lastRenderedPlayer = null;
+    render();
+    click("move-right");
+    const landedOnFieldDirection = state.player.x === 6 && state.player.y === 4;
+    await wait(BUTTON_STEP_DELAY + 40);
+    const fieldDirectionMovedPlayer = state.currentStageIndex === 5
+      && state.player.x === 7
+      && state.player.y === 4;
+
+    loadStage(6);
+    const stage7DirectionCount = document.querySelectorAll('[data-object-kind="direction"]').length;
+    const outsideBoss = document.querySelector('[data-object-id="boss-07"]');
+    const outsideBossPosition = [outsideBoss.dataset.x, outsideBoss.dataset.y];
+    const outsideBossBlocksMovement = !isWalkable(4, 14, 6);
+    state.player = { x: 4, y: 13, facing: "down" };
+    state.lastRenderedPlayer = null;
+    render();
+    click("interact");
+    const outsideBossWasDefeated = state.defeatedEnemies.has("boss-07")
+      && !document.querySelector('[data-object-id="boss-07"]')
+      && isWalkable(4, 14, 6);
 
     return {
       seaIsBlocked,
@@ -702,20 +896,40 @@ try {
       firstWarpExitIsClear,
       warpSequenceFinished,
       undoAfterWarp,
-      secondWarpSourceStage,
-      secondWarpArrivalStage,
-      secondWarpArrivalPosition,
-      secondWarpStage,
-      secondWarpPosition,
       reverseWarpSourceStage,
       reverseWarpArrivalStage,
       reverseWarpArrivalPosition,
       reverseWarpStage,
       reverseWarpPosition,
       upwardWarp,
+      slimeBlocksMovement,
+      slimeWasDefeated,
+      slimeSpriteWasUsed,
       connectedStage,
       connectedPosition,
       undoAcrossStage,
+      debugRightWasHandled,
+      debugMovedToStage2,
+      debugMovedFrom5To6,
+      debugMovedFrom6To7,
+      debugMovedFrom7To6,
+      debugMovedFrom6To5,
+      debugStopsAtMissingStage,
+      debugMovedFrom41To42,
+      debugMovedFrom42To43,
+      debugMovedFrom43To42,
+      stage42Number,
+      stage43Number,
+      stage42RenderedActions,
+      stage43RenderedActions,
+      fieldDirectionCount,
+      fieldDirectionUsesAsset,
+      landedOnFieldDirection,
+      fieldDirectionMovedPlayer,
+      stage7DirectionCount,
+      outsideBossPosition,
+      outsideBossBlocksMovement,
+      outsideBossWasDefeated,
     };
   })()`);
 
@@ -747,37 +961,56 @@ try {
   assert(result.aButtonAttackPose === "attack", "勇者が踏んだAボタンで剣を振りません。");
   assert(result.aButtonAttackSprite.includes("hero-down-attack.png"), "踏んだAボタンの攻撃方向が違います。");
   assert(result.sourceWarpStage === 0, "ワープへ入った瞬間に別ステージへ切り替わっています。");
-  assert(result.sourceWarpPosition.join(",") === "9,7", "ワープ元で待機する位置が違います。");
+  assert(result.sourceWarpPosition.join(",") === "8,6", "ワープ元で待機する位置が違います。");
   assert(result.sourceWarpIsObservable, "入った側のワープ上で発動を待つ段階がありません。");
   assert(result.inputBlockedWhileActivating, "ワープ発動待機中に別の移動入力が割り込んでいます。");
   assert(result.firstWarpStage === 1, "右向き進入で右隣のワープへ移動しません。");
-  assert(result.firstWarpPosition.join(",") === "9,7", "ワープ直後に移動先ワープ上へ表示されません。");
+  assert(result.firstWarpPosition.join(",") === "2,6", "ワープ直後に移動先ワープ上へ表示されません。");
   assert(result.firstWarpIsObservable, "ワープ上で待機する段階をプレイヤーが観測できません。");
-  assert(result.firstWarpExitPosition.join(",") === "10,7", "待機後に進入方向へ1マス退出しません。");
+  assert(result.firstWarpExitPosition.join(",") === "3,6", "待機後に進入方向へ1マス退出しません。");
   assert(result.warpExitIsAnimated, "ワープ上から出口への1マス移動が表示されていません。");
   assert(result.firstWarpExitIsClear, "ワープ後も勇者がワープポイント上に残っています。");
   assert(result.warpSequenceFinished, "退出アニメーション後もワープ処理が残っています。");
   assert(result.undoAfterWarp, "ワープと出口への移動を一度にUNDOできません。");
-  assert(result.secondWarpSourceStage === 1, "連続ワープが入った瞬間に切り替わっています。");
-  assert(result.secondWarpArrivalStage === 2, "連続ワープの待機後に移動先へ切り替わりません。");
-  assert(result.secondWarpArrivalPosition.join(",") === "9,7", "連続ワープの到着表示位置が違います。");
-  assert(result.secondWarpStage === 2, "同じ行の右側で最も近いワープを選んでいません。");
-  assert(result.secondWarpPosition.join(",") === "10,7", "連続する右向きワープの出口位置が違います。");
-  assert(result.reverseWarpSourceStage === 2, "逆向きワープが入った瞬間に切り替わっています。");
-  assert(result.reverseWarpArrivalStage === 1, "逆向きワープの待機後に移動先へ切り替わりません。");
-  assert(result.reverseWarpArrivalPosition.join(",") === "9,7", "左向きワープの到着表示位置が違います。");
-  assert(result.reverseWarpStage === 1, "左向き進入で左側の最寄りワープへ戻りません。");
-  assert(result.reverseWarpPosition.join(",") === "8,7", "左向きワープ後に出口の左隣へ移動しません。");
+  assert(result.reverseWarpSourceStage === 1, "逆向きワープが入った瞬間に切り替わっています。");
+  assert(result.reverseWarpArrivalStage === 0, "逆向きワープの待機後にStage 1-1へ戻りません。");
+  assert(result.reverseWarpArrivalPosition.join(",") === "8,6", "左向きワープの到着表示位置が違います。");
+  assert(result.reverseWarpStage === 0, "左向き進入でStage 1-1へ戻りません。");
+  assert(result.reverseWarpPosition.join(",") === "7,6", "左向きワープ後に出口の左隣へ移動しません。");
   assert(result.upwardWarp === null, "同じ列にないワープを上下方向の候補にしています。");
+  assert(result.slimeBlocksMovement, "生きているスライムが進路をふさいでいません。");
+  assert(result.slimeWasDefeated, "Aの剣でスライムを倒せません。");
+  assert(result.slimeSpriteWasUsed, "Stage 2-1のスライムに追加画像が使われていません。");
   assert(result.connectedStage === 1, "画面端から地続きの隣接ステージへ移動できません。");
   assert(result.connectedPosition.join(",") === "0,0", "隣接ステージでの接続座標が違います。");
   assert(result.undoAcrossStage, "ステージをまたぐ移動を一手戻しできません。");
+  assert(result.debugRightWasHandled, "Shift+矢印キーでブラウザ既定動作を抑止できません。");
+  assert(result.debugMovedToStage2, "Shift+右でStage 1-1から2-1へ移動できません。");
+  assert(result.debugMovedFrom5To6, "Shift+上でStage 5-1から6-1へ移動できません。");
+  assert(result.debugMovedFrom6To7, "Shift+右でStage 6-1から7-1へ移動できません。");
+  assert(result.debugMovedFrom7To6, "Shift+左でStage 7-1から6-1へ戻れません。");
+  assert(result.debugMovedFrom6To5, "Shift+下でStage 6-1から5-1へ戻れません。");
+  assert(result.debugStopsAtMissingStage, "隣接ステージがない方向へのデバッグ移動が誤動作します。");
+  assert(result.debugMovedFrom41To42, "Shift+上でStage 4-1から4-2へ移動できません。");
+  assert(result.debugMovedFrom42To43, "Shift+上でStage 4-2から4-3へ移動できません。");
+  assert(result.debugMovedFrom43To42, "Shift+下でStage 4-3から4-2へ戻れません。");
+  assert(result.stage42Number === "4-2" && result.stage43Number === "4-3", "4-2または4-3のステージ表示が違います。");
+  assert(result.stage42RenderedActions.join(",") === "8,8", "Stage 4-2のA/U描画位置が違います。");
+  assert(result.stage43RenderedActions.join(",") === "9,9", "Stage 4-3のA/U描画位置が違います。");
+  assert(result.fieldDirectionCount === 19, "Stage 6-1の盤面内矢印が描画されていません。");
+  assert(result.fieldDirectionUsesAsset, "盤面内矢印に方向ボタン素材が使われていません。");
+  assert(result.landedOnFieldDirection, "盤面内矢印のマスへ移動できません。");
+  assert(result.fieldDirectionMovedPlayer, "盤面内矢印が勇者を自動移動させません。");
+  assert(result.stage7DirectionCount === 1, "Stage 7-1の右矢印が描画されていません。");
+  assert(result.outsideBossPosition.join(",") === "4,14", "Stage 7-1の魔王が十字ボタン内側にいません。");
+  assert(result.outsideBossBlocksMovement, "魔王に当たり判定がありません。");
+  assert(result.outsideBossWasDefeated, "盤面外の魔王をAで斬れません。");
 
-  assert(result.slideRightPosition.join(",") === "4,7", "Slide input did not begin with one move to the right.");
-  assert(result.slideUpPosition.join(",") === "4,6", "Sliding onto Up did not switch direction immediately.");
+  assert(result.slideRightPosition.join(",") === "4,6", "Slide input did not begin with one move to the right.");
+  assert(result.slideUpPosition.join(",") === "4,5", "Sliding onto Up did not switch direction immediately.");
   assert(result.slideChangedToUp, "The pressed state did not switch from Right to Up.");
   assert(result.slideStoppedInGap, "Direction input did not stop in the D-pad gap.");
-  assert(result.slideLeftPosition.join(",") === "3,6", "Sliding from the gap onto Left did not move immediately.");
+  assert(result.slideLeftPosition.join(",") === "3,5", "Sliding from the gap onto Left did not move immediately.");
   assert(result.slideRestartedAsLeft, "Left did not become pressed after re-entering the D-pad.");
   assert(result.slideReleased, "Direction input remained active after the pointer was released.");
   assert(result.longPressEventsBlocked, "Long-press selection, menu, or drag events were not prevented.");
