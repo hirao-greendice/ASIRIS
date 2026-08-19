@@ -1,7 +1,7 @@
 "use strict";
 
 // 盤面上の座標はすべて0始まりです。
-const BOARD = Object.freeze({ columns: 12, rows: 21 });
+const BOARD = Object.freeze({ columns: 11, rows: 19 });
 
 const DIRECTIONS = Object.freeze({
   up: Object.freeze({ x: 0, y: -1, angle: "0deg", label: "上" }),
@@ -10,7 +10,92 @@ const DIRECTIONS = Object.freeze({
   left: Object.freeze({ x: -1, y: 0, angle: "270deg", label: "左" }),
 });
 
-const BUTTON_STEP_DELAY = 160;
+const BUTTON_STEP_DELAY = 240;
+const ATTACK_DURATION = 260;
+const PLAYER_MOVE_DURATION = 210;
+const HOLD_REPEAT_DELAY = 380;
+const HOLD_REPEAT_INTERVAL = 240;
+const UNDO_REPEAT_DELAY = 440;
+const UNDO_REPEAT_INTERVAL = 220;
+const ENVIRONMENT_FLIP_INTERVAL = 1600;
+const WARP_ACTIVATION_DELAY = 300;
+const WARP_EXIT_DELAY = 300;
+const FOOTSTEP_SNIPPET_DURATION = 500;
+const HERO_SPRITE_PATHS = Object.freeze(
+  Object.keys(DIRECTIONS).flatMap((direction) => (
+    ["idle", "attack"].map((pose) => `asset/hero-${direction}-${pose}.png`)
+  )),
+);
+const HERO_SPRITE_CACHE = HERO_SPRITE_PATHS.map((path) => {
+  const image = new Image();
+  image.src = path;
+  return image;
+});
+
+function createSoundEffect(path, volume) {
+  const audio = new Audio(path);
+  audio.preload = "auto";
+  audio.volume = volume;
+  return audio;
+}
+
+const footstepAudio = createSoundEffect("asset/footstep.mp3", 0.65);
+const warpAudio = createSoundEffect("asset/warp.mp3", 0.7);
+let footstepStopTimer = null;
+let soundEffectsUnlocked = false;
+
+function unlockSoundEffects() {
+  if (soundEffectsUnlocked) return;
+  soundEffectsUnlocked = true;
+  const wasMuted = warpAudio.muted;
+  warpAudio.muted = true;
+
+  const finishUnlock = () => {
+    warpAudio.pause();
+    try {
+      warpAudio.currentTime = 0;
+    } catch {
+      // Metadata may not be ready during the first interaction.
+    }
+    warpAudio.muted = wasMuted;
+  };
+
+  const playback = warpAudio.play();
+  if (playback?.then) {
+    playback.then(finishUnlock).catch(() => {
+      soundEffectsUnlocked = false;
+      finishUnlock();
+    });
+  } else {
+    window.setTimeout(finishUnlock, 0);
+  }
+}
+
+function restartSound(audio) {
+  audio.pause();
+  try {
+    audio.currentTime = 0;
+  } catch {
+    // Metadata may not be ready on the very first input.
+  }
+  const playback = audio.play();
+  playback?.catch(() => {
+    // Browsers can reject playback until the first user interaction.
+  });
+}
+
+function playFootstepSound() {
+  if (footstepStopTimer !== null) window.clearTimeout(footstepStopTimer);
+  restartSound(footstepAudio);
+  footstepStopTimer = window.setTimeout(() => {
+    footstepAudio.pause();
+    footstepStopTimer = null;
+  }, FOOTSTEP_SNIPPET_DURATION);
+}
+
+function playWarpSound() {
+  restartSound(warpAudio);
+}
 
 const rect = (x, y, width, height) => {
   const cells = [];
@@ -30,23 +115,23 @@ const line = (x, y, length, direction = "right") => {
   }));
 };
 
-// UIも地形も、同じ12×21盤面上のオブジェクトとして定義します。
+// UIも地形も、同じ11×19盤面上のオブジェクトとして定義します。
 // 最終ギミックでは、これらの座標をそのまま床や壁として扱えます。
 const SCREEN_OBJECTS = Object.freeze([
   {
     id: "play-zone",
     kind: "zone",
     x: 1,
-    y: 3,
-    width: 10,
-    height: 10,
+    y: 2,
+    width: 9,
+    height: 9,
     label: "プレイエリア",
   },
   {
     id: "settings",
     kind: "button",
     action: "settings",
-    x: 1,
+    x: 0,
     y: 0,
     width: 2,
     height: 2,
@@ -57,12 +142,12 @@ const SCREEN_OBJECTS = Object.freeze([
   {
     id: "stage-number",
     kind: "button",
-    action: "next-stage",
-    x: 5,
+    action: "stage-info",
+    x: 2,
     y: 0,
-    width: 2,
+    width: 7,
     height: 2,
-    symbol: "1",
+    symbol: "1-1",
     label: "ステージ",
     className: "stage-number",
   },
@@ -82,7 +167,7 @@ const SCREEN_OBJECTS = Object.freeze([
     kind: "button",
     action: "move-up",
     x: 3,
-    y: 14,
+    y: 12,
     width: 2,
     height: 2,
     symbol: "↑",
@@ -95,7 +180,7 @@ const SCREEN_OBJECTS = Object.freeze([
     kind: "button",
     action: "move-left",
     x: 1,
-    y: 16,
+    y: 14,
     width: 2,
     height: 2,
     symbol: "←",
@@ -108,7 +193,7 @@ const SCREEN_OBJECTS = Object.freeze([
     kind: "button",
     action: "move-right",
     x: 5,
-    y: 16,
+    y: 14,
     width: 2,
     height: 2,
     symbol: "→",
@@ -121,7 +206,7 @@ const SCREEN_OBJECTS = Object.freeze([
     kind: "button",
     action: "move-down",
     x: 3,
-    y: 18,
+    y: 16,
     width: 2,
     height: 2,
     symbol: "↓",
@@ -134,18 +219,18 @@ const SCREEN_OBJECTS = Object.freeze([
     kind: "button",
     action: "interact",
     x: 8,
-    y: 14,
+    y: 12,
     width: 2,
     height: 2,
     symbol: "A",
-    label: "調べる",
+    label: "剣を振る",
   },
   {
     id: "undo",
     kind: "button",
     action: "undo",
     x: 8,
-    y: 18,
+    y: 16,
     width: 2,
     height: 2,
     symbol: "U",
@@ -153,22 +238,22 @@ const SCREEN_OBJECTS = Object.freeze([
   },
 ]);
 
-// positionは、大きなワールド内で各12×21ステージが並ぶ位置です。
+// positionは、大きなワールド内で各11×19画面が並ぶ位置です。
 // 同じ形式のオブジェクトを追加すれば、ステージ数を増やせます。
 const STAGES = Object.freeze([
   {
     id: "knowledge-01",
     number: 1,
     position: { x: 0, y: 0 },
-    start: { x: 3, y: 8, facing: "right" },
+    start: { x: 3, y: 7, facing: "right" },
     holes: [],
     floor: [
-      ...rect(2, 7, 4, 3),
-      ...line(6, 8, 5),
+      ...rect(2, 6, 4, 3),
+      ...line(6, 7, 4),
     ],
     objects: [
-      { id: "knowledge-01", kind: "knowledge", x: 6, y: 8, symbol: "知", label: "知識" },
-      { id: "exit-01", kind: "exit", x: 10, y: 8, symbol: "門", label: "次のステージ" },
+      { id: "knowledge-01", kind: "knowledge", x: 6, y: 7, symbol: "知", label: "知識" },
+      { id: "warp-01", kind: "warp", x: 9, y: 7, label: "ワープポイント" },
     ],
     hint: "「知」のマスに立ち、Aで知識を取得します。",
   },
@@ -176,16 +261,17 @@ const STAGES = Object.freeze([
     id: "knowledge-02",
     number: 2,
     position: { x: 1, y: 0 },
-    start: { x: 2, y: 6, facing: "down" },
+    start: { x: 2, y: 5, facing: "down" },
     holes: [],
     floor: [
-      ...line(2, 6, 7),
-      ...line(8, 7, 3, "down"),
-      ...line(4, 10, 5),
+      ...line(2, 5, 7),
+      ...line(8, 6, 3, "down"),
+      ...line(9, 7, 1),
+      ...line(4, 9, 5),
     ],
     objects: [
-      { id: "knowledge-02", kind: "knowledge", x: 8, y: 10, symbol: "知", label: "知識" },
-      { id: "exit-02", kind: "exit", x: 4, y: 10, symbol: "門", label: "次のステージ" },
+      { id: "knowledge-02", kind: "knowledge", x: 8, y: 9, symbol: "知", label: "知識" },
+      { id: "warp-02", kind: "warp", x: 9, y: 7, label: "ワープポイント" },
     ],
     hint: "右へ進み、曲がった先を調べます。",
   },
@@ -193,24 +279,33 @@ const STAGES = Object.freeze([
     id: "knowledge-03",
     number: 3,
     position: { x: 2, y: 0 },
-    start: { x: 2, y: 8, facing: "right" },
+    start: { x: 2, y: 7, facing: "right" },
     holes: [],
     floor: [
-      ...rect(2, 7, 3, 3),
-      ...line(5, 8, 6),
+      ...rect(2, 6, 3, 3),
+      ...line(5, 7, 5),
     ],
     objects: [
-      { id: "goal-03", kind: "exit", x: 10, y: 8, symbol: "終", label: "仮のゴール" },
+      { id: "warp-03", kind: "warp", x: 9, y: 7, label: "ワープポイント" },
     ],
-    hint: "この画面も、ボタンも、すべて12×21の盤面上にあります。",
+    hint: "この画面も、ボタンも、すべて11×19の盤面上にあります。",
   },
 ]);
 
 const stageElement = document.querySelector("#stage");
+let environmentFlipTimer = null;
+
+function startEnvironmentAnimation() {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (environmentFlipTimer !== null) window.clearInterval(environmentFlipTimer);
+
+  environmentFlipTimer = window.setInterval(() => {
+    stageElement.classList.toggle("is-environment-flipped");
+  }, ENVIRONMENT_FLIP_INTERVAL);
+}
 
 const state = {
   currentStageIndex: 0,
-  unlockedStageCount: 1,
   player: null,
   history: [],
   collectedKnowledge: new Set(),
@@ -218,6 +313,17 @@ const state = {
   manualInputSources: new Map(),
   buttonMotion: null,
   buttonMotionTimer: null,
+  isAttacking: false,
+  attackTimer: null,
+  lastRenderedPlayer: null,
+  directionRepeatTimers: new Map(),
+  activeUndoSources: new Set(),
+  undoRepeatTimers: new Map(),
+  pressedControlSources: new Map(),
+  activeDirectionPointerSources: new Set(),
+  warpArrivalKey: null,
+  pendingWarpExit: null,
+  warpExitTimer: null,
 };
 
 const cellKey = (x, y) => `${x},${y}`;
@@ -236,7 +342,7 @@ function assertArea({ id, x, y, width = 1, height = 1 }) {
     && y + height <= BOARD.rows;
 
   if (!valid) {
-    throw new Error(`${id} の座標が12×21の盤面外です。`);
+    throw new Error(`${id} の座標が11×19の盤面外です。`);
   }
 }
 
@@ -292,6 +398,7 @@ function setGridArea(element, object) {
   element.style.setProperty("--row", object.y + 1);
   element.style.setProperty("--width", object.width ?? 1);
   element.style.setProperty("--height", object.height ?? 1);
+  element.style.setProperty("--depth", object.y * 10);
   element.dataset.x = String(object.x);
   element.dataset.y = String(object.y);
   element.dataset.width = String(object.width ?? 1);
@@ -299,35 +406,26 @@ function setGridArea(element, object) {
   element.dataset.boardPart = "true";
 }
 
-function createBoardCell(x, y) {
-  const cell = document.createElement("span");
-  cell.className = "board-cell";
-  cell.style.gridColumn = String(x + 1);
-  cell.style.gridRow = String(y + 1);
-  cell.dataset.x = String(x);
-  cell.dataset.y = String(y);
-  cell.setAttribute("aria-hidden", "true");
-  return cell;
-}
-
 function createLabeledContent(object) {
   const fragment = document.createDocumentFragment();
-  const symbol = document.createElement("span");
-  symbol.className = "stage-object__symbol";
-  symbol.textContent = object.symbol;
-  if (object.icon) {
-    symbol.classList.add("stage-object__icon", `stage-object__icon--${object.icon}`);
-  }
-  symbol.setAttribute("aria-hidden", "true");
-  fragment.append(symbol);
 
-  if (!object.hideCaption) {
-    const caption = document.createElement("span");
-    caption.className = "stage-object__caption";
-    caption.textContent = object.label;
-    caption.setAttribute("aria-hidden", "true");
-    fragment.append(caption);
+  if (object.id === "stage-number") {
+    const copy = document.createElement("span");
+    copy.className = "stage-number__copy";
+
+    const label = document.createElement("span");
+    label.className = "stage-number__label";
+    label.textContent = "Stage";
+
+    const value = document.createElement("span");
+    value.className = "stage-number__value";
+    value.textContent = object.symbol;
+
+    copy.append(label, value);
+    fragment.append(copy);
+    return fragment;
   }
+
   return fragment;
 }
 
@@ -345,16 +443,47 @@ function createScreenObject(object) {
     element.dataset.action = object.action;
     element.setAttribute("aria-label", object.label);
     element.append(createLabeledContent(object));
+    const isPressedByHero = state.player && containsCell(object, state.player.x, state.player.y);
+    const isPressedByInput = [...state.pressedControlSources.values()].includes(object.action);
+    if (isPressedByHero) {
+      element.classList.add("is-player-pressed");
+    }
+    if (isPressedByInput) element.classList.add("is-input-pressed");
+    element.setAttribute("aria-pressed", String(Boolean(isPressedByHero || isPressedByInput)));
   } else {
-    element.textContent = object.label;
     element.setAttribute("aria-hidden", "true");
   }
   return element;
 }
 
+function createPanelTile(x, y) {
+  const tile = document.createElement("div");
+  tile.className = "stage-object stage-object--panel";
+  const playZone = SCREEN_OBJECTS.find((object) => object.id === "play-zone");
+  if (y + 1 < BOARD.rows && !containsCell(playZone, x, y + 1)) {
+    tile.classList.add("has-tile-below");
+  }
+  tile.dataset.objectId = `panel-${x}-${y}`;
+  tile.dataset.objectKind = "panel";
+  tile.setAttribute("aria-hidden", "true");
+  setGridArea(tile, { x, y });
+  return tile;
+}
+
+function createSeaTile(x, y) {
+  const tile = document.createElement("div");
+  tile.className = "stage-object stage-object--sea";
+  tile.dataset.objectId = `sea-${x}-${y}`;
+  tile.dataset.objectKind = "sea";
+  tile.setAttribute("aria-hidden", "true");
+  setGridArea(tile, { x, y });
+  return tile;
+}
+
 function createFloorTile(cell, index) {
   const tile = document.createElement("div");
   tile.className = "stage-object stage-object--tile";
+  if (hasLandAt(cell.x, cell.y + 1)) tile.classList.add("has-tile-below");
   tile.dataset.objectId = `floor-${index}`;
   tile.dataset.objectKind = "floor";
   tile.setAttribute("aria-hidden", "true");
@@ -378,7 +507,16 @@ function createEntity(object) {
   entity.className = "stage-object stage-object--entity";
   entity.dataset.objectId = object.id;
   entity.dataset.objectKind = object.kind;
-  entity.textContent = object.symbol;
+  if (object.kind === "warp") {
+    const sprite = document.createElement("img");
+    sprite.className = "warp-point__sprite";
+    sprite.src = "asset/warp-point.png";
+    sprite.alt = "";
+    sprite.draggable = false;
+    entity.append(sprite);
+  } else {
+    entity.textContent = object.symbol;
+  }
   entity.title = object.label;
   entity.setAttribute("aria-label", object.label);
   setGridArea(entity, object);
@@ -391,26 +529,67 @@ function createPlayer() {
   player.className = "stage-object stage-object--player";
   player.dataset.objectId = "player";
   player.dataset.objectKind = "player";
-  player.textContent = "人";
+  player.dataset.facing = state.player.facing;
+  player.dataset.pose = state.isAttacking ? "attack" : "idle";
   player.setAttribute("aria-label", "プレイヤー");
   setGridArea(player, state.player);
-  player.style.setProperty("--facing-angle", DIRECTIONS[state.player.facing].angle);
+
+  const sprite = document.createElement("img");
+  sprite.className = "player-sprite";
+  sprite.src = `asset/hero-${state.player.facing}-${state.isAttacking ? "attack" : "idle"}.png`;
+  sprite.alt = "";
+  sprite.draggable = false;
+  player.append(sprite);
   return player;
+}
+
+function animatePlayerFrom(previousPlayer) {
+  if (!previousPlayer || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (previousPlayer.stageIndex !== state.currentStageIndex) return;
+
+  const deltaX = previousPlayer.x - state.player.x;
+  const deltaY = previousPlayer.y - state.player.y;
+  if (Math.abs(deltaX) + Math.abs(deltaY) !== 1) return;
+
+  const player = stageElement.querySelector("#player");
+  const stageBounds = stageElement.getBoundingClientRect();
+  const fromX = deltaX * (stageBounds.width / BOARD.columns);
+  const fromY = deltaY * (stageBounds.height / BOARD.rows);
+
+  player.animate(
+    [
+      { transform: `translate(${fromX}px, ${fromY}px)` },
+      { transform: "translate(0, 0)" },
+    ],
+    {
+      duration: PLAYER_MOVE_DURATION,
+      easing: "cubic-bezier(0.22, 0.8, 0.35, 1)",
+    },
+  );
 }
 
 function render() {
   const stage = currentStage();
   const fragment = document.createDocumentFragment();
+  const playZone = SCREEN_OBJECTS.find((object) => object.id === "play-zone");
+  const previousPlayer = state.lastRenderedPlayer
+    ? { ...state.lastRenderedPlayer }
+    : null;
+
+  fragment.append(createScreenObject(playZone));
 
   for (let y = 0; y < BOARD.rows; y += 1) {
     for (let x = 0; x < BOARD.columns; x += 1) {
-      fragment.append(createBoardCell(x, y));
+      if (containsCell(playZone, x, y)) fragment.append(createSeaTile(x, y));
+      else fragment.append(createPanelTile(x, y));
     }
   }
 
-  SCREEN_OBJECTS.forEach((object) => fragment.append(createScreenObject(object)));
   stage.floor.forEach((cell, index) => fragment.append(createFloorTile(cell, index)));
   stage.holes.forEach((cell, index) => fragment.append(createHole(cell, index)));
+  SCREEN_OBJECTS
+    .filter((object) => object.kind === "button")
+    .forEach((object) => fragment.append(createScreenObject(object)));
   stage.objects
     .filter((object) => !state.collectedKnowledge.has(object.id))
     .forEach((object) => fragment.append(createEntity(object)));
@@ -421,24 +600,38 @@ function render() {
   stageElement.dataset.worldX = String(stage.position.x);
   stageElement.dataset.worldY = String(stage.position.y);
 
-  const number = stageElement.querySelector('[data-object-id="stage-number"] .stage-object__symbol');
-  number.textContent = String(stage.number);
+  const number = stageElement.querySelector('[data-object-id="stage-number"] .stage-number__value');
+  number.textContent = `${stage.number}-1`;
+  animatePlayerFrom(previousPlayer);
+  state.lastRenderedPlayer = {
+    x: state.player.x,
+    y: state.player.y,
+    stageIndex: state.currentStageIndex,
+  };
 
 }
 
 function loadStage(index, message = "") {
   const stage = STAGES[index];
   clearButtonMotion();
+  clearAttack();
+  clearDirectionRepeats();
+  clearUndoRepeats();
+  clearWarpExit();
   state.manualInputSources.clear();
+  state.pressedControlSources.clear();
+  state.activeDirectionPointerSources.clear();
+  state.warpArrivalKey = null;
   state.currentStageIndex = index;
   state.player = { ...stage.start };
+  state.lastRenderedPlayer = null;
   state.history = [];
   state.message = message || `ステージ${stage.number}：矢印で移動します`;
   render();
 }
 
-function remember() {
-  state.history.push({ ...state.player });
+function remember(player = state.player, stageIndex = state.currentStageIndex) {
+  state.history.push({ stageIndex, player: { ...player } });
   if (state.history.length > 200) state.history.shift();
 }
 
@@ -464,19 +657,246 @@ function directionButtonAt(x, y) {
   return button ? directionFromAction(button.action) : null;
 }
 
-function isWalkable(x, y) {
+function refreshControlPressedStates() {
+  stageElement.querySelectorAll(".stage-object--button[data-action]").forEach((element) => {
+    const object = SCREEN_OBJECTS.find((candidate) => candidate.id === element.dataset.objectId);
+    const isPressedByHero = Boolean(
+      object && state.player && containsCell(object, state.player.x, state.player.y)
+    );
+    const isPressedByInput = [...state.pressedControlSources.values()].includes(element.dataset.action);
+    element.classList.toggle("is-player-pressed", isPressedByHero);
+    element.classList.toggle("is-input-pressed", isPressedByInput);
+    element.setAttribute("aria-pressed", String(isPressedByHero || isPressedByInput));
+  });
+}
+
+function pressControl(sourceId, action) {
+  if (!action || state.pressedControlSources.get(sourceId) === action) return;
+  state.pressedControlSources.set(sourceId, action);
+  refreshControlPressedStates();
+}
+
+function releaseControl(sourceId) {
+  if (!state.pressedControlSources.delete(sourceId)) return;
+  refreshControlPressedStates();
+}
+
+function screenButtonAt(x, y) {
+  return SCREEN_OBJECTS.find((object) => (
+    object.kind === "button" && containsCell(object, x, y)
+  ));
+}
+
+function isSeaCell(x, y) {
+  const playZone = SCREEN_OBJECTS.find((object) => object.id === "play-zone");
+  return containsCell(playZone, x, y);
+}
+
+function hasLandAt(x, y, stageIndex = state.currentStageIndex) {
+  return STAGES[stageIndex].floor.some((cell) => cell.x === x && cell.y === y);
+}
+
+function isWalkable(x, y, stageIndex = state.currentStageIndex) {
   if (x < 0 || y < 0 || x >= BOARD.columns || y >= BOARD.rows) return false;
-  return !currentStage().holes.some((hole) => hole.x === x && hole.y === y);
+  if (STAGES[stageIndex].holes.some((hole) => hole.x === x && hole.y === y)) return false;
+  return !isSeaCell(x, y) || hasLandAt(x, y, stageIndex);
+}
+
+function stageIndexAtWorldPosition(x, y) {
+  return STAGES.findIndex((stage) => stage.position.x === x && stage.position.y === y);
+}
+
+function worldCell(stageIndex, cell) {
+  const stage = STAGES[stageIndex];
+  return {
+    x: stage.position.x * BOARD.columns + cell.x,
+    y: stage.position.y * BOARD.rows + cell.y,
+  };
+}
+
+function warpKey(stageIndex, warp) {
+  return `${STAGES[stageIndex].id}:${warp.id}`;
+}
+
+function warpAt(stageIndex, x, y) {
+  return STAGES[stageIndex].objects.find((object) => (
+    object.kind === "warp" && object.x === x && object.y === y
+  ));
+}
+
+function nearestWarpInDirection(sourceStageIndex, sourceWarp, directionName) {
+  const direction = DIRECTIONS[directionName];
+  const sourceWorldCell = worldCell(sourceStageIndex, sourceWarp);
+  const candidates = [];
+
+  STAGES.forEach((stage, stageIndex) => {
+    stage.objects
+      .filter((object) => object.kind === "warp")
+      .forEach((warp) => {
+        const candidateWorldCell = worldCell(stageIndex, warp);
+        const deltaX = candidateWorldCell.x - sourceWorldCell.x;
+        const deltaY = candidateWorldCell.y - sourceWorldCell.y;
+        const isSameLine = direction.x !== 0 ? deltaY === 0 : deltaX === 0;
+        const distance = direction.x !== 0 ? deltaX * direction.x : deltaY * direction.y;
+
+        if (isSameLine && distance > 0) {
+          candidates.push({ stageIndex, warp, distance });
+        }
+      });
+  });
+
+  candidates.sort((first, second) => first.distance - second.distance);
+  return candidates[0] ?? null;
+}
+
+function clearWarpExit() {
+  if (state.warpExitTimer !== null) window.clearTimeout(state.warpExitTimer);
+  state.warpExitTimer = null;
+  state.pendingWarpExit = null;
+}
+
+function scheduleWarpExit(pendingWarpExit) {
+  state.warpExitTimer = window.setTimeout(() => {
+    if (state.pendingWarpExit !== pendingWarpExit) return;
+    const destinationWarp = warpAt(
+      pendingWarpExit.destinationStageIndex,
+      state.player.x,
+      state.player.y,
+    );
+    const isStillAtDestination = state.currentStageIndex === pendingWarpExit.destinationStageIndex
+      && destinationWarp?.id === pendingWarpExit.destinationWarpId;
+
+    if (!isStillAtDestination) {
+      clearWarpExit();
+      return;
+    }
+
+    state.currentStageIndex = pendingWarpExit.exit.stageIndex;
+    state.player.x = pendingWarpExit.exit.x;
+    state.player.y = pendingWarpExit.exit.y;
+    state.player.facing = pendingWarpExit.directionName;
+    state.warpArrivalKey = null;
+    pendingWarpExit.phase = "moving";
+    playFootstepSound();
+    state.warpExitTimer = window.setTimeout(() => {
+      if (state.pendingWarpExit === pendingWarpExit) state.pendingWarpExit = null;
+      state.warpExitTimer = null;
+    }, PLAYER_MOVE_DURATION);
+    render();
+  }, WARP_EXIT_DELAY);
+}
+
+function beginWarpSequence(sourceStageIndex, sourceWarp, destination, exit, directionName) {
+  clearWarpExit();
+  const pendingWarpExit = {
+    sourceStageIndex,
+    sourceWarpId: sourceWarp.id,
+    destinationStageIndex: destination.stageIndex,
+    destinationWarpId: destination.warp.id,
+    exit,
+    directionName,
+    phase: "activating",
+  };
+  state.pendingWarpExit = pendingWarpExit;
+
+  state.warpExitTimer = window.setTimeout(() => {
+    if (state.pendingWarpExit !== pendingWarpExit) return;
+    const sourceWarpAtPlayer = warpAt(
+      pendingWarpExit.sourceStageIndex,
+      state.player.x,
+      state.player.y,
+    );
+    const isStillAtSource = state.currentStageIndex === pendingWarpExit.sourceStageIndex
+      && sourceWarpAtPlayer?.id === pendingWarpExit.sourceWarpId;
+
+    if (!isStillAtSource) {
+      clearWarpExit();
+      return;
+    }
+
+    state.currentStageIndex = pendingWarpExit.destinationStageIndex;
+    state.player.x = destination.warp.x;
+    state.player.y = destination.warp.y;
+    state.player.facing = pendingWarpExit.directionName;
+    state.warpArrivalKey = warpKey(destination.stageIndex, destination.warp);
+    pendingWarpExit.phase = "waiting";
+    playWarpSound();
+    render();
+    scheduleWarpExit(pendingWarpExit);
+  }, WARP_ACTIVATION_DELAY);
+}
+
+function resolveWarpAfterMove(directionName) {
+  const sourceStageIndex = state.currentStageIndex;
+  const sourceWarp = warpAt(sourceStageIndex, state.player.x, state.player.y);
+
+  if (!sourceWarp) {
+    state.warpArrivalKey = null;
+    return null;
+  }
+
+  const sourceKey = warpKey(sourceStageIndex, sourceWarp);
+  if (state.warpArrivalKey === sourceKey) return null;
+
+  const destination = nearestWarpInDirection(sourceStageIndex, sourceWarp, directionName);
+  if (!destination) {
+    state.warpArrivalKey = sourceKey;
+    return { sourceWarp, destination: null };
+  }
+
+  const exit = walkableStepFrom(
+    destination.stageIndex,
+    destination.warp.x,
+    destination.warp.y,
+    directionName,
+  );
+  if (!exit || warpAt(exit.stageIndex, exit.x, exit.y)) {
+    state.warpArrivalKey = sourceKey;
+    return { sourceWarp, destination: null, blockedDestination: destination };
+  }
+
+  state.warpArrivalKey = sourceKey;
+  beginWarpSequence(sourceStageIndex, sourceWarp, destination, exit, directionName);
+  return { sourceWarp, destination, exit };
+}
+
+function walkableStepFrom(stageIndex, x, y, directionName) {
+  const direction = DIRECTIONS[directionName];
+  let nextStageIndex = stageIndex;
+  let nextX = x + direction.x;
+  let nextY = y + direction.y;
+
+  if (nextX < 0 || nextX >= BOARD.columns || nextY < 0 || nextY >= BOARD.rows) {
+    const stagePosition = STAGES[stageIndex].position;
+    const worldStageX = stagePosition.x + (nextX < 0 ? -1 : nextX >= BOARD.columns ? 1 : 0);
+    const worldStageY = stagePosition.y + (nextY < 0 ? -1 : nextY >= BOARD.rows ? 1 : 0);
+    nextStageIndex = stageIndexAtWorldPosition(worldStageX, worldStageY);
+    if (nextStageIndex < 0) return null;
+
+    if (nextX < 0) nextX = BOARD.columns - 1;
+    else if (nextX >= BOARD.columns) nextX = 0;
+    if (nextY < 0) nextY = BOARD.rows - 1;
+    else if (nextY >= BOARD.rows) nextY = 0;
+  }
+
+  if (!isWalkable(nextX, nextY, nextStageIndex)) return null;
+  return { stageIndex: nextStageIndex, x: nextX, y: nextY };
 }
 
 function moveOneCell(directionName) {
-  const direction = DIRECTIONS[directionName];
-  const nextX = state.player.x + direction.x;
-  const nextY = state.player.y + direction.y;
-  if (!isWalkable(nextX, nextY)) return false;
-  state.player.x = nextX;
-  state.player.y = nextY;
+  const next = walkableStepFrom(
+    state.currentStageIndex,
+    state.player.x,
+    state.player.y,
+    directionName,
+  );
+  if (!next) return false;
+
+  state.currentStageIndex = next.stageIndex;
+  state.player.x = next.x;
+  state.player.y = next.y;
   state.player.facing = directionName;
+  playFootstepSound();
   return true;
 }
 
@@ -528,6 +948,10 @@ function beginButtonMotion(ignoreCurrentSources) {
 }
 
 function advanceButtonMotion() {
+  if (state.pendingWarpExit) {
+    clearButtonMotion();
+    return;
+  }
   const tileDirection = directionButtonAt(state.player.x, state.player.y);
   if (!tileDirection) {
     clearButtonMotion();
@@ -543,6 +967,8 @@ function advanceButtonMotion() {
     return;
   }
 
+  const previousButton = screenButtonAt(state.player.x, state.player.y);
+  const previousStageIndex = state.currentStageIndex;
   if (!moveOneCell(tileDirection)) {
     state.message = `${DIRECTIONS[tileDirection].label}ボタンの先へ進めません`;
     clearButtonMotion();
@@ -550,10 +976,24 @@ function advanceButtonMotion() {
     return;
   }
 
-  state.message = `${DIRECTIONS[tileDirection].label}ボタンで移動中`;
+  const warpResult = resolveWarpAfterMove(tileDirection);
+  if (warpResult?.destination) {
+    state.message = `ワープ起動中：ステージ${STAGES[warpResult.destination.stageIndex].number}へ移動します`;
+  } else if (state.currentStageIndex !== previousStageIndex) {
+    state.message = `地続きのステージ${currentStage().number}へ移動しました`;
+  } else {
+    state.message = `${DIRECTIONS[tileDirection].label}ボタンで移動中`;
+  }
   render();
 
-  const nextTileDirection = directionButtonAt(state.player.x, state.player.y);
+  const nextButton = screenButtonAt(state.player.x, state.player.y);
+  if (nextButton && nextButton.id !== previousButton?.id && !directionFromAction(nextButton.action)) {
+    clearButtonMotion();
+    runAction(nextButton.action);
+    return;
+  }
+
+  const nextTileDirection = directionFromAction(nextButton?.action);
   if (!nextTileDirection) {
     clearButtonMotion();
     return;
@@ -563,6 +1003,7 @@ function advanceButtonMotion() {
 }
 
 function performManualMove(directionName) {
+  if (state.pendingWarpExit) return;
   const tileDirection = directionButtonAt(state.player.x, state.player.y);
 
   if (tileDirection) {
@@ -582,20 +1023,111 @@ function performManualMove(directionName) {
     return;
   }
 
-  remember();
+  const previousButton = screenButtonAt(state.player.x, state.player.y);
+  const previousPlayer = { ...state.player };
+  const previousStageIndex = state.currentStageIndex;
   state.player.facing = directionName;
 
   if (moveOneCell(directionName)) {
-    state.message = `${DIRECTIONS[directionName].label}へ移動しました`;
+    remember(previousPlayer, previousStageIndex);
+    const warpResult = resolveWarpAfterMove(directionName);
+    if (warpResult?.destination) {
+      state.message = `ワープ起動中：ステージ${STAGES[warpResult.destination.stageIndex].number}へ移動します`;
+    } else if (warpResult && !warpResult.destination) {
+      state.message = `${DIRECTIONS[directionName].label}方向にワープポイントがありません`;
+    } else if (state.currentStageIndex !== previousStageIndex) {
+      state.message = `地続きのステージ${currentStage().number}へ移動しました`;
+    } else {
+      state.message = `${DIRECTIONS[directionName].label}へ移動しました`;
+    }
   } else {
     state.message = "その先は盤面外または穴です";
   }
   render();
 
-  if (directionButtonAt(state.player.x, state.player.y)) {
+  const enteredButton = screenButtonAt(state.player.x, state.player.y);
+  if (enteredButton && enteredButton.id !== previousButton?.id) {
+    const enteredDirection = directionFromAction(enteredButton.action);
+    if (!enteredDirection) {
+      runAction(enteredButton.action);
+      return;
+    }
+
     // このマスへ入るために使った入力は消費済み。着地後の相殺には使いません。
     beginButtonMotion(true);
   }
+}
+
+function clearAttack() {
+  if (state.attackTimer !== null) window.clearTimeout(state.attackTimer);
+  state.attackTimer = null;
+  state.isAttacking = false;
+}
+
+function clearDirectionRepeat(directionName) {
+  const timer = state.directionRepeatTimers.get(directionName);
+  if (timer !== undefined) window.clearTimeout(timer);
+  state.directionRepeatTimers.delete(directionName);
+}
+
+function clearDirectionRepeats() {
+  [...state.directionRepeatTimers.keys()].forEach(clearDirectionRepeat);
+}
+
+function clearUndoRepeat(sourceId) {
+  const timer = state.undoRepeatTimers.get(sourceId);
+  if (timer !== undefined) window.clearTimeout(timer);
+  state.undoRepeatTimers.delete(sourceId);
+}
+
+function clearUndoRepeats() {
+  [...state.undoRepeatTimers.keys()].forEach(clearUndoRepeat);
+  state.activeUndoSources.clear();
+}
+
+function scheduleUndoRepeat(sourceId, delay) {
+  clearUndoRepeat(sourceId);
+  const timer = window.setTimeout(() => {
+    state.undoRepeatTimers.delete(sourceId);
+    if (!state.activeUndoSources.has(sourceId)) return;
+
+    undo();
+    scheduleUndoRepeat(sourceId, UNDO_REPEAT_INTERVAL);
+  }, delay);
+  state.undoRepeatTimers.set(sourceId, timer);
+}
+
+function pressUndo(sourceId) {
+  if (state.activeUndoSources.has(sourceId)) return;
+  state.activeUndoSources.add(sourceId);
+  undo();
+  scheduleUndoRepeat(sourceId, UNDO_REPEAT_DELAY);
+}
+
+function releaseUndo(sourceId) {
+  state.activeUndoSources.delete(sourceId);
+  clearUndoRepeat(sourceId);
+}
+
+function hasActiveDirection(directionName) {
+  return [...state.manualInputSources.values()].includes(directionName);
+}
+
+function scheduleDirectionRepeat(directionName, delay) {
+  clearDirectionRepeat(directionName);
+  const timer = window.setTimeout(() => {
+    state.directionRepeatTimers.delete(directionName);
+    if (!hasActiveDirection(directionName)) return;
+
+    performManualMove(directionName);
+    scheduleDirectionRepeat(directionName, HOLD_REPEAT_INTERVAL);
+  }, delay);
+  state.directionRepeatTimers.set(directionName, timer);
+}
+
+function startDirectionRepeat(directionName) {
+  if (state.directionRepeatTimers.has(directionName)) return;
+  scheduleDirectionRepeat(directionName, HOLD_REPEAT_DELAY);
 }
 
 function pressDirection(sourceId, directionName) {
@@ -604,6 +1136,7 @@ function pressDirection(sourceId, directionName) {
   const directionWasAlreadyPressed = [...state.manualInputSources.values()].includes(directionName);
   state.manualInputSources.set(sourceId, directionName);
 
+  if (!directionWasAlreadyPressed) startDirectionRepeat(directionName);
   if (!directionWasAlreadyPressed || directionButtonAt(state.player.x, state.player.y)) {
     performManualMove(directionName);
   }
@@ -611,8 +1144,10 @@ function pressDirection(sourceId, directionName) {
 
 function releaseDirection(sourceId) {
   if (!state.manualInputSources.has(sourceId)) return;
+  const directionName = state.manualInputSources.get(sourceId);
   state.manualInputSources.delete(sourceId);
   state.buttonMotion?.ignoredSources.delete(sourceId);
+  if (!hasActiveDirection(directionName)) clearDirectionRepeat(directionName);
 
   if (directionButtonAt(state.player.x, state.player.y)) {
     if (state.buttonMotionTimer !== null) window.clearTimeout(state.buttonMotionTimer);
@@ -636,13 +1171,18 @@ function move(directionName) {
 
 function undo() {
   clearButtonMotion();
+  clearAttack();
+  clearWarpExit();
   const previous = state.history.pop();
   if (!previous) {
     state.message = "これ以上戻せません";
     render();
     return;
   }
-  state.player = previous;
+  state.currentStageIndex = previous.stageIndex;
+  state.player = { ...previous.player };
+  state.warpArrivalKey = null;
+  state.lastRenderedPlayer = null;
   state.message = "一手戻しました";
   render();
 }
@@ -654,56 +1194,42 @@ function findInteractionTarget() {
   const frontKey = cellKey(state.player.x + direction.x, state.player.y + direction.y);
 
   return stage.objects.find((object) => {
+    if (object.kind === "warp") return false;
     if (state.collectedKnowledge.has(object.id)) return false;
     const objectKey = cellKey(object.x, object.y);
     return objectKey === currentKey || objectKey === frontKey;
   });
 }
 
-function interact() {
+function interact(missMessage = "近くに調べられるものはありません") {
   const target = findInteractionTarget();
 
   if (!target) {
-    state.message = "近くに調べられるものはありません";
+    state.message = missMessage;
     render();
     return;
   }
 
   if (target.kind === "knowledge") {
     state.collectedKnowledge.add(target.id);
-    state.unlockedStageCount = Math.min(
-      STAGES.length,
-      Math.max(state.unlockedStageCount, state.currentStageIndex + 2),
-    );
-    state.message = state.currentStageIndex + 1 < STAGES.length
-      ? `知識を取得。ステージ${state.currentStageIndex + 2}を解放しました`
-      : "知識を取得しました";
+    state.message = "知識を取得しました";
     render();
     return;
   }
 
-  if (target.kind === "exit") {
-    const nextIndex = state.currentStageIndex + 1;
-    if (nextIndex < state.unlockedStageCount && nextIndex < STAGES.length) {
-      loadStage(nextIndex, `ステージ${STAGES[nextIndex].number}へ移動しました`);
-    } else if (nextIndex >= STAGES.length) {
-      state.message = "ここが現在の仮ゴールです";
-      render();
-    } else {
-      state.message = "先へ進むには、この画面の知識が必要です";
-      render();
-    }
-  }
 }
 
-function showNextUnlockedStage() {
-  const nextIndex = (state.currentStageIndex + 1) % state.unlockedStageCount;
-  if (nextIndex === state.currentStageIndex) {
-    state.message = "まだ次のステージは解放されていません";
+function attack() {
+  if (state.attackTimer !== null) window.clearTimeout(state.attackTimer);
+  state.isAttacking = true;
+  state.attackTimer = window.setTimeout(() => {
+    state.attackTimer = null;
+    state.isAttacking = false;
     render();
-    return;
-  }
-  loadStage(nextIndex);
+  }, ATTACK_DURATION);
+
+  // 剣を振った方向の現在地・1マス前を、従来のA判定として調べる。
+  interact("剣を振りました");
 }
 
 function runAction(action) {
@@ -713,7 +1239,7 @@ function runAction(action) {
   }
 
   const actions = {
-    interact,
+    interact: attack,
     undo,
     hint: () => {
       state.message = currentStage().hint;
@@ -723,28 +1249,83 @@ function runAction(action) {
       state.message = "設定画面は次の実装段階で追加できます";
       render();
     },
-    "next-stage": showNextUnlockedStage,
+    "stage-info": () => {
+      state.message = `現在地：ステージ${currentStage().number}`;
+      render();
+    },
   };
 
   actions[action]?.();
 }
 
 stageElement.addEventListener("pointerdown", (event) => {
+  unlockSoundEffects();
   const button = event.target.closest("[data-action]");
-  const directionName = directionFromAction(button?.dataset.action);
+  if (!button) return;
+
+  const sourceId = `pointer:${event.pointerId}`;
+  const action = button.dataset.action;
+  pressControl(sourceId, action);
+
+  if (action === "undo") {
+    event.preventDefault();
+    try {
+      stageElement.setPointerCapture?.(event.pointerId);
+    } catch {
+      // Synthetic pointer events do not own an active pointer to capture.
+    }
+    pressUndo(sourceId);
+    return;
+  }
+
+  const directionName = directionFromAction(action);
   if (!directionName) return;
 
   event.preventDefault();
-  stageElement.setPointerCapture?.(event.pointerId);
-  pressDirection(`pointer:${event.pointerId}`, directionName);
+  state.activeDirectionPointerSources.add(sourceId);
+  try {
+    stageElement.setPointerCapture?.(event.pointerId);
+  } catch {
+    // Synthetic pointer events do not own an active pointer to capture.
+  }
+  pressDirection(sourceId, directionName);
 });
 
-function releasePointerDirection(event) {
-  releaseDirection(`pointer:${event.pointerId}`);
+stageElement.addEventListener("pointermove", (event) => {
+  const sourceId = `pointer:${event.pointerId}`;
+  if (!state.activeDirectionPointerSources.has(sourceId)) return;
+
+  event.preventDefault();
+  const pointedElement = document.elementFromPoint(event.clientX, event.clientY);
+  const button = pointedElement?.closest?.(".stage-object--button[data-action]");
+  const nextDirection = directionFromAction(button?.dataset.action);
+  const currentDirection = state.manualInputSources.get(sourceId) ?? null;
+
+  if (currentDirection === nextDirection) return;
+
+  releaseDirection(sourceId);
+  releaseControl(sourceId);
+
+  if (!nextDirection) return;
+  pressControl(sourceId, button.dataset.action);
+  pressDirection(sourceId, nextDirection);
+});
+
+function releasePointerInput(event) {
+  const sourceId = `pointer:${event.pointerId}`;
+  state.activeDirectionPointerSources.delete(sourceId);
+  releaseDirection(sourceId);
+  releaseUndo(sourceId);
+  releaseControl(sourceId);
 }
 
-window.addEventListener("pointerup", releasePointerDirection);
-window.addEventListener("pointercancel", releasePointerDirection);
+window.addEventListener("pointerup", releasePointerInput);
+window.addEventListener("pointercancel", releasePointerInput);
+stageElement.addEventListener("lostpointercapture", releasePointerInput);
+
+["contextmenu", "selectstart", "dragstart"].forEach((eventName) => {
+  stageElement.addEventListener(eventName, (event) => event.preventDefault());
+});
 
 stageElement.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
@@ -756,10 +1337,12 @@ stageElement.addEventListener("click", (event) => {
     if (event.detail === 0) tapDirection(directionName);
     return;
   }
+  if (button.dataset.action === "undo" && event.detail !== 0) return;
   runAction(button.dataset.action);
 });
 
 window.addEventListener("keydown", (event) => {
+  unlockSoundEffects();
   const keyDirections = {
     ArrowUp: "up",
     ArrowRight: "right",
@@ -767,14 +1350,22 @@ window.addEventListener("keydown", (event) => {
     ArrowLeft: "left",
   };
   const directionName = keyDirections[event.key];
+  const sourceId = `key:${event.code || event.key}`;
   if (directionName) {
     event.preventDefault();
-    if (!event.repeat) pressDirection(`key:${event.key}`, directionName);
+    if (!event.repeat) {
+      pressControl(sourceId, `move-${directionName}`);
+      pressDirection(sourceId, directionName);
+    }
     return;
   }
 
   if (event.repeat) return;
-  if (["Enter", " "].includes(event.key) && event.target.closest?.("button")) return;
+  const focusedButton = event.target.closest?.("button[data-action]");
+  if (["Enter", " "].includes(event.key) && focusedButton) {
+    pressControl(sourceId, focusedButton.dataset.action);
+    return;
+  }
 
   const keyActions = {
     a: "interact",
@@ -789,19 +1380,32 @@ window.addEventListener("keydown", (event) => {
   const action = keyActions[event.key];
   if (!action) return;
   event.preventDefault();
+  pressControl(sourceId, action);
+  if (action === "undo") {
+    pressUndo(sourceId);
+    return;
+  }
   runAction(action);
 });
 
 window.addEventListener("keyup", (event) => {
+  const sourceId = `key:${event.code || event.key}`;
   if (["ArrowUp", "ArrowRight", "ArrowDown", "ArrowLeft"].includes(event.key)) {
-    releaseDirection(`key:${event.key}`);
+    releaseDirection(sourceId);
   }
+  releaseUndo(sourceId);
+  releaseControl(sourceId);
 });
 
 window.addEventListener("blur", () => {
   const sourceIds = [...state.manualInputSources.keys()];
   sourceIds.forEach(releaseDirection);
+  clearUndoRepeats();
+  state.activeDirectionPointerSources.clear();
+  state.pressedControlSources.clear();
+  refreshControlPressedStates();
 });
 
 validateStageData();
+startEnvironmentAnimation();
 loadStage(0, "矢印で移動し、知識のマスでAを押してください");
