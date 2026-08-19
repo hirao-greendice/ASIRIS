@@ -21,6 +21,7 @@ const ENVIRONMENT_FLIP_INTERVAL = 1600;
 const WARP_ACTIVATION_DELAY = 300;
 const WARP_EXIT_DELAY = 300;
 const FOOTSTEP_SNIPPET_DURATION = 500;
+const SLIME_SPRITE_PATH = "22283729.png";
 const HERO_SPRITE_PATHS = Object.freeze(
   Object.keys(DIRECTIONS).flatMap((direction) => (
     ["idle", "attack"].map((pose) => `asset/hero-${direction}-${pose}.png`)
@@ -31,6 +32,8 @@ const HERO_SPRITE_CACHE = HERO_SPRITE_PATHS.map((path) => {
   image.src = path;
   return image;
 });
+const slimeSprite = new Image();
+slimeSprite.src = SLIME_SPRITE_PATH;
 
 function createSoundEffect(path, volume) {
   const audio = new Audio(path);
@@ -114,6 +117,16 @@ const line = (x, y, length, direction = "right") => {
     y: y + vector.y * index,
   }));
 };
+
+const directionObject = (id, x, y, direction) => Object.freeze({
+  id,
+  kind: "direction",
+  action: `move-${direction}`,
+  direction,
+  x,
+  y,
+  label: `${DIRECTIONS[direction].label}へ進む矢印`,
+});
 
 // UIも地形も、同じ11×19盤面上のオブジェクトとして定義します。
 // 最終ギミックでは、これらの座標をそのまま床や壁として扱えます。
@@ -239,56 +252,219 @@ const SCREEN_OBJECTS = Object.freeze([
 ]);
 
 // positionは、大きなワールド内で各11×19画面が並ぶ位置です。
-// 同じ形式のオブジェクトを追加すれば、ステージ数を増やせます。
+// デザイン案のStage 1-1からStage 7-1までを実装しています。
 const STAGES = Object.freeze([
   {
-    id: "knowledge-01",
+    id: "stage-01",
     number: 1,
     position: { x: 0, y: 0 },
-    start: { x: 3, y: 7, facing: "right" },
+    entryWarpId: null,
+    exitWarpId: "warp-01-out",
+    exitDirection: "right",
+    start: { x: 3, y: 6, facing: "right" },
     holes: [],
     floor: [
-      ...rect(2, 6, 4, 3),
-      ...line(6, 7, 4),
+      ...line(1, 3, 2),
+      ...rect(6, 3, 3, 2),
+      ...rect(2, 5, 3, 3),
+      ...line(5, 6, 4),
+      ...line(3, 9, 2),
+      ...rect(7, 8, 2, 2),
     ],
     objects: [
-      { id: "knowledge-01", kind: "knowledge", x: 6, y: 7, symbol: "知", label: "知識" },
-      { id: "warp-01", kind: "warp", x: 9, y: 7, label: "ワープポイント" },
+      { id: "warp-01-upper", kind: "warp", x: 2, y: 3, label: "上側のワープポイント" },
+      { id: "warp-01-out", kind: "warp", x: 8, y: 6, label: "Stage 2-1へのワープポイント" },
     ],
-    hint: "「知」のマスに立ち、Aで知識を取得します。",
+    hint: "右側のワープポイントを目指しましょう。",
   },
   {
-    id: "knowledge-02",
+    id: "stage-02",
     number: 2,
     position: { x: 1, y: 0 },
-    start: { x: 2, y: 5, facing: "down" },
+    entryWarpId: "warp-02-in",
+    exitWarpId: "warp-02-out",
+    exitDirection: "right",
+    start: { x: 3, y: 6, facing: "right" },
     holes: [],
     floor: [
-      ...line(2, 5, 7),
-      ...line(8, 6, 3, "down"),
-      ...line(9, 7, 1),
-      ...line(4, 9, 5),
+      ...line(2, 6, 7),
     ],
     objects: [
-      { id: "knowledge-02", kind: "knowledge", x: 8, y: 9, symbol: "知", label: "知識" },
-      { id: "warp-02", kind: "warp", x: 9, y: 7, label: "ワープポイント" },
+      { id: "warp-02-in", kind: "warp", x: 2, y: 6, label: "Stage 1-1へのワープポイント" },
+      { id: "slime-02", kind: "slime", x: 5, y: 6, label: "スライム" },
+      { id: "warp-02-out", kind: "warp", x: 8, y: 6, label: "右側のワープポイント" },
     ],
-    hint: "右へ進み、曲がった先を調べます。",
+    hint: "スライムをAで倒し、右側のワープポイントまで進みましょう。",
   },
   {
-    id: "knowledge-03",
+    id: "stage-03",
     number: 3,
     position: { x: 2, y: 0 },
-    start: { x: 2, y: 7, facing: "right" },
+    entryWarpId: "warp-03-in",
+    exitWarpId: "warp-03-out",
+    exitDirection: "right",
+    start: { x: 3, y: 6, facing: "right" },
     holes: [],
     floor: [
-      ...rect(2, 6, 3, 3),
-      ...line(5, 7, 5),
+      ...line(2, 6, 7),
+      ...rect(6, 7, 2, 3),
     ],
     objects: [
-      { id: "warp-03", kind: "warp", x: 9, y: 7, label: "ワープポイント" },
+      { id: "warp-03-in", kind: "warp", x: 2, y: 6, label: "Stage 2-1へのワープポイント" },
+      { id: "slime-03", kind: "slime", x: 5, y: 6, label: "スライム" },
+      { id: "warp-03-out", kind: "warp", x: 8, y: 6, label: "Stage 4-1へのワープポイント" },
+      { id: "warp-03-lower", kind: "warp", x: 7, y: 8, label: "下側のワープポイント" },
     ],
-    hint: "この画面も、ボタンも、すべて11×19の盤面上にあります。",
+    hint: "横道だけでなく、下側のワープポイントも調べてみましょう。",
+  },
+  {
+    id: "stage-04",
+    number: 4,
+    position: { x: 3, y: 0 },
+    entryWarpId: "warp-04-in",
+    exitWarpId: "warp-04-out",
+    exitDirection: "right",
+    start: { x: 3, y: 6, facing: "right" },
+    holes: [],
+    floor: [
+      ...line(2, 6, 7),
+      ...rect(6, 7, 2, 3),
+    ],
+    objects: [
+      { id: "warp-04-in", kind: "warp", x: 2, y: 6, label: "Stage 3-1へのワープポイント" },
+      { id: "slime-04", kind: "slime", x: 5, y: 6, label: "スライム" },
+      { id: "warp-04-out", kind: "warp", x: 8, y: 6, label: "Stage 5-1へのワープポイント" },
+      { id: "warp-04-lower", kind: "warp", x: 7, y: 8, label: "下側のワープポイント" },
+    ],
+    hint: "右側のワープポイントから次へ進めます。",
+  },
+  {
+    id: "stage-05",
+    number: 5,
+    position: { x: 4, y: 0 },
+    entryWarpId: "warp-05-in",
+    exitWarpId: "warp-05-out",
+    exitDirection: "up",
+    start: { x: 3, y: 6, facing: "right" },
+    holes: [],
+    floor: [
+      ...rect(3, 3, 2, 7),
+      ...rect(6, 4, 3, 6),
+      { x: 2, y: 6 },
+      { x: 2, y: 8 },
+      { x: 8, y: 3 },
+    ],
+    objects: [
+      { id: "warp-05-in", kind: "warp", x: 2, y: 6, label: "Stage 4-1へのワープポイント" },
+      { id: "warp-05-lower", kind: "warp", x: 2, y: 8, label: "左下のワープポイント" },
+      { id: "warp-05-out", kind: "warp", x: 8, y: 3, label: "Stage 6-1へのワープポイント" },
+      { id: "boss-05", kind: "boss", x: 7, y: 5, label: "魔王" },
+    ],
+    hint: "右上のワープポイントは、上へ入ると次のステージにつながります。",
+  },
+  {
+    id: "stage-06",
+    number: 6,
+    position: { x: 4, y: -1 },
+    entryWarpId: "warp-06-main",
+    exitWarpId: "warp-06-main",
+    exitDirection: "right",
+    start: { x: 4, y: 3, facing: "down" },
+    holes: [],
+    floor: [
+      ...rect(2, 3, 7, 7),
+    ],
+    objects: [
+      { id: "warp-06-left", kind: "warp", x: 2, y: 6, label: "左側のワープポイント" },
+      { id: "warp-06-main", kind: "warp", x: 8, y: 6, label: "Stage 5-1・7-1につながるワープポイント" },
+      directionObject("arrow-06-01", 6, 4, "right"),
+      directionObject("arrow-06-02", 8, 4, "down"),
+      directionObject("arrow-06-03", 3, 5, "right"),
+      directionObject("arrow-06-04", 5, 5, "down"),
+      directionObject("arrow-06-05", 7, 5, "left"),
+      directionObject("arrow-06-06", 4, 6, "left"),
+      directionObject("arrow-06-07", 6, 6, "up"),
+      directionObject("arrow-06-08", 3, 7, "up"),
+      directionObject("arrow-06-09", 5, 7, "right"),
+      directionObject("arrow-06-10", 7, 7, "down"),
+      directionObject("arrow-06-11", 2, 8, "right"),
+      directionObject("arrow-06-12", 4, 8, "down"),
+      directionObject("arrow-06-13", 6, 8, "left"),
+      directionObject("arrow-06-14", 2, 9, "up"),
+      directionObject("arrow-06-15", 3, 9, "left"),
+      directionObject("arrow-06-16", 5, 9, "up"),
+      directionObject("arrow-06-17", 6, 9, "right"),
+      directionObject("arrow-06-18", 7, 9, "left"),
+      directionObject("arrow-06-19", 8, 9, "down"),
+    ],
+    hint: "小さな矢印を踏むと、その矢印が勇者を動かします。",
+  },
+  {
+    id: "stage-07",
+    number: 7,
+    position: { x: 5, y: -1 },
+    entryWarpId: "warp-07-in",
+    exitWarpId: null,
+    exitDirection: null,
+    start: { x: 4, y: 6, facing: "right" },
+    holes: [],
+    floor: [
+      ...rect(2, 3, 7, 7),
+    ],
+    objects: [
+      { id: "warp-07-in", kind: "warp", x: 2, y: 6, label: "Stage 6-1へのワープポイント" },
+      directionObject("arrow-07-right", 3, 6, "right"),
+      { id: "boss-07", kind: "boss", x: 4, y: 14, label: "画面の外にいる魔王" },
+    ],
+    hint: "盤面の中だけがステージとは限りません。",
+  },
+  {
+    id: "stage-04-2",
+    number: 4,
+    substage: 2,
+    position: { x: 3, y: -1 },
+    entryWarpId: "warp-04-2-lower",
+    exitWarpId: "warp-04-2-lower",
+    exitDirection: "up",
+    start: { x: 3, y: 6, facing: "right" },
+    holes: [],
+    floor: [
+      ...line(2, 6, 7),
+      ...rect(6, 7, 2, 3),
+    ],
+    objects: [
+      { id: "warp-04-2-in", kind: "warp", x: 2, y: 6, label: "左側のワープポイント" },
+      { id: "slime-04-2", kind: "slime", x: 5, y: 6, label: "スライム" },
+      { id: "warp-04-2-out", kind: "warp", x: 8, y: 6, label: "右側のワープポイント" },
+      { id: "warp-04-2-lower", kind: "warp", x: 7, y: 8, label: "Stage 4-1・4-3につながるワープポイント" },
+    ],
+    hint: "Stage 4-1とほぼ同じですが、上にもステージが続いています。",
+  },
+  {
+    id: "stage-04-3",
+    number: 4,
+    substage: 3,
+    position: { x: 3, y: -2 },
+    entryWarpId: "warp-04-3-lower",
+    exitWarpId: null,
+    exitDirection: null,
+    screenObjectOverrides: {
+      interact: { x: 9 },
+      undo: { x: 9 },
+    },
+    start: { x: 3, y: 6, facing: "right" },
+    holes: [],
+    floor: [
+      ...line(2, 6, 7),
+      ...rect(6, 7, 2, 3),
+    ],
+    objects: [
+      { id: "warp-04-3-in", kind: "warp", x: 2, y: 6, label: "左側のワープポイント" },
+      { id: "slime-04-3", kind: "slime", x: 5, y: 6, label: "スライム" },
+      { id: "warp-04-3-out", kind: "warp", x: 8, y: 6, label: "右側のワープポイント" },
+      { id: "warp-04-3-lower", kind: "warp", x: 7, y: 8, label: "Stage 4-2へのワープポイント" },
+    ],
+    hint: "AとUの位置が、これまでの画面と少し違います。",
   },
 ]);
 
@@ -308,7 +484,7 @@ const state = {
   currentStageIndex: 0,
   player: null,
   history: [],
-  collectedKnowledge: new Set(),
+  defeatedEnemies: new Set(),
   message: "",
   manualInputSources: new Map(),
   buttonMotion: null,
@@ -328,6 +504,14 @@ const state = {
 
 const cellKey = (x, y) => `${x},${y}`;
 const currentStage = () => STAGES[state.currentStageIndex];
+const stageLabel = (stage) => `${stage.number}-${stage.substage ?? 1}`;
+
+function screenObjectsForStage(stageIndex = state.currentStageIndex) {
+  const overrides = STAGES[stageIndex].screenObjectOverrides ?? {};
+  return SCREEN_OBJECTS.map((object) => (
+    overrides[object.id] ? { ...object, ...overrides[object.id] } : object
+  ));
+}
 
 function assertArea({ id, x, y, width = 1, height = 1 }) {
   const valid = Number.isInteger(x)
@@ -357,13 +541,22 @@ function validateStageData() {
     screenObjectIds.add(object.id);
   });
 
-  STAGES.forEach((stage) => {
+  STAGES.forEach((stage, stageIndex) => {
     if (ids.has(stage.id)) throw new Error(`ステージID ${stage.id} が重複しています。`);
     ids.add(stage.id);
 
     const positionKey = cellKey(stage.position.x, stage.position.y);
     if (positions.has(positionKey)) throw new Error(`ワールド座標 ${positionKey} が重複しています。`);
     positions.add(positionKey);
+
+    Object.keys(stage.screenObjectOverrides ?? {}).forEach((objectId) => {
+      if (!SCREEN_OBJECTS.some((object) => object.id === objectId)) {
+        throw new Error(`${stage.id}が存在しない画面オブジェクト${objectId}を変更しています。`);
+      }
+    });
+    screenObjectsForStage(stageIndex).forEach((object) => {
+      assertArea({ ...object, id: `${stage.id}:${object.id}` });
+    });
 
     assertArea({ id: `${stage.id}:start`, ...stage.start });
     stage.floor.forEach((cell, index) => assertArea({ id: `${stage.id}:floor-${index}`, ...cell }));
@@ -507,12 +700,33 @@ function createEntity(object) {
   entity.className = "stage-object stage-object--entity";
   entity.dataset.objectId = object.id;
   entity.dataset.objectKind = object.kind;
+  if (object.direction) entity.dataset.direction = object.direction;
   if (object.kind === "warp") {
     const sprite = document.createElement("img");
     sprite.className = "warp-point__sprite";
     sprite.src = "asset/warp-point.png";
     sprite.alt = "";
     sprite.draggable = false;
+    entity.append(sprite);
+  } else if (object.kind === "slime") {
+    const sprite = document.createElement("img");
+    sprite.className = "slime-sprite";
+    sprite.src = SLIME_SPRITE_PATH;
+    sprite.alt = "";
+    sprite.draggable = false;
+    entity.append(sprite);
+  } else if (object.kind === "direction") {
+    const sprite = document.createElement("img");
+    sprite.className = "field-direction__sprite";
+    sprite.src = "asset/direction-button.webp";
+    sprite.alt = "";
+    sprite.draggable = false;
+    entity.append(sprite);
+  } else if (object.kind === "boss") {
+    const sprite = document.createElement("span");
+    sprite.className = "boss-sprite";
+    sprite.textContent = "👹";
+    sprite.setAttribute("aria-hidden", "true");
     entity.append(sprite);
   } else {
     entity.textContent = object.symbol;
@@ -571,7 +785,8 @@ function animatePlayerFrom(previousPlayer) {
 function render() {
   const stage = currentStage();
   const fragment = document.createDocumentFragment();
-  const playZone = SCREEN_OBJECTS.find((object) => object.id === "play-zone");
+  const screenObjects = screenObjectsForStage();
+  const playZone = screenObjects.find((object) => object.id === "play-zone");
   const previousPlayer = state.lastRenderedPlayer
     ? { ...state.lastRenderedPlayer }
     : null;
@@ -587,11 +802,11 @@ function render() {
 
   stage.floor.forEach((cell, index) => fragment.append(createFloorTile(cell, index)));
   stage.holes.forEach((cell, index) => fragment.append(createHole(cell, index)));
-  SCREEN_OBJECTS
+  screenObjects
     .filter((object) => object.kind === "button")
     .forEach((object) => fragment.append(createScreenObject(object)));
   stage.objects
-    .filter((object) => !state.collectedKnowledge.has(object.id))
+    .filter((object) => !state.defeatedEnemies.has(object.id))
     .forEach((object) => fragment.append(createEntity(object)));
   fragment.append(createPlayer());
 
@@ -601,7 +816,7 @@ function render() {
   stageElement.dataset.worldY = String(stage.position.y);
 
   const number = stageElement.querySelector('[data-object-id="stage-number"] .stage-number__value');
-  number.textContent = `${stage.number}-1`;
+  number.textContent = stageLabel(stage);
   animatePlayerFrom(previousPlayer);
   state.lastRenderedPlayer = {
     x: state.player.x,
@@ -626,7 +841,7 @@ function loadStage(index, message = "") {
   state.player = { ...stage.start };
   state.lastRenderedPlayer = null;
   state.history = [];
-  state.message = message || `ステージ${stage.number}：矢印で移動します`;
+  state.message = message || `ステージ${stageLabel(stage)}：矢印で移動します`;
   render();
 }
 
@@ -649,17 +864,15 @@ function directionFromAction(action) {
 }
 
 function directionButtonAt(x, y) {
-  const button = SCREEN_OBJECTS.find((object) => (
-    object.kind === "button"
-    && directionFromAction(object.action)
-    && containsCell(object, x, y)
-  ));
+  const button = screenButtonAt(x, y);
   return button ? directionFromAction(button.action) : null;
 }
 
 function refreshControlPressedStates() {
   stageElement.querySelectorAll(".stage-object--button[data-action]").forEach((element) => {
-    const object = SCREEN_OBJECTS.find((candidate) => candidate.id === element.dataset.objectId);
+    const object = screenObjectsForStage().find(
+      (candidate) => candidate.id === element.dataset.objectId,
+    );
     const isPressedByHero = Boolean(
       object && state.player && containsCell(object, state.player.x, state.player.y)
     );
@@ -682,7 +895,12 @@ function releaseControl(sourceId) {
 }
 
 function screenButtonAt(x, y) {
-  return SCREEN_OBJECTS.find((object) => (
+  const fieldDirection = currentStage().objects.find((object) => (
+    object.kind === "direction" && containsCell(object, x, y)
+  ));
+  if (fieldDirection) return fieldDirection;
+
+  return screenObjectsForStage().find((object) => (
     object.kind === "button" && containsCell(object, x, y)
   ));
 }
@@ -696,9 +914,18 @@ function hasLandAt(x, y, stageIndex = state.currentStageIndex) {
   return STAGES[stageIndex].floor.some((cell) => cell.x === x && cell.y === y);
 }
 
+function enemyAt(stageIndex, x, y) {
+  return STAGES[stageIndex].objects.find((object) => (
+    (object.kind === "slime" || object.kind === "boss")
+    && containsCell(object, x, y)
+    && !state.defeatedEnemies.has(object.id)
+  ));
+}
+
 function isWalkable(x, y, stageIndex = state.currentStageIndex) {
   if (x < 0 || y < 0 || x >= BOARD.columns || y >= BOARD.rows) return false;
   if (STAGES[stageIndex].holes.some((hole) => hole.x === x && hole.y === y)) return false;
+  if (enemyAt(stageIndex, x, y)) return false;
   return !isSeaCell(x, y) || hasLandAt(x, y, stageIndex);
 }
 
@@ -978,9 +1205,9 @@ function advanceButtonMotion() {
 
   const warpResult = resolveWarpAfterMove(tileDirection);
   if (warpResult?.destination) {
-    state.message = `ワープ起動中：ステージ${STAGES[warpResult.destination.stageIndex].number}へ移動します`;
+    state.message = `ワープ起動中：ステージ${stageLabel(STAGES[warpResult.destination.stageIndex])}へ移動します`;
   } else if (state.currentStageIndex !== previousStageIndex) {
-    state.message = `地続きのステージ${currentStage().number}へ移動しました`;
+    state.message = `地続きのステージ${stageLabel(currentStage())}へ移動しました`;
   } else {
     state.message = `${DIRECTIONS[tileDirection].label}ボタンで移動中`;
   }
@@ -1026,22 +1253,30 @@ function performManualMove(directionName) {
   const previousButton = screenButtonAt(state.player.x, state.player.y);
   const previousPlayer = { ...state.player };
   const previousStageIndex = state.currentStageIndex;
+  const direction = DIRECTIONS[directionName];
+  const blockingEnemy = enemyAt(
+    state.currentStageIndex,
+    state.player.x + direction.x,
+    state.player.y + direction.y,
+  );
   state.player.facing = directionName;
 
   if (moveOneCell(directionName)) {
     remember(previousPlayer, previousStageIndex);
     const warpResult = resolveWarpAfterMove(directionName);
     if (warpResult?.destination) {
-      state.message = `ワープ起動中：ステージ${STAGES[warpResult.destination.stageIndex].number}へ移動します`;
+      state.message = `ワープ起動中：ステージ${stageLabel(STAGES[warpResult.destination.stageIndex])}へ移動します`;
     } else if (warpResult && !warpResult.destination) {
       state.message = `${DIRECTIONS[directionName].label}方向にワープポイントがありません`;
     } else if (state.currentStageIndex !== previousStageIndex) {
-      state.message = `地続きのステージ${currentStage().number}へ移動しました`;
+      state.message = `地続きのステージ${stageLabel(currentStage())}へ移動しました`;
     } else {
       state.message = `${DIRECTIONS[directionName].label}へ移動しました`;
     }
   } else {
-    state.message = "その先は盤面外または穴です";
+    state.message = blockingEnemy
+      ? `${blockingEnemy.label}が道をふさいでいます。Aで攻撃しましょう`
+      : "その先は盤面外または穴です";
   }
   render();
 
@@ -1194,14 +1429,14 @@ function findInteractionTarget() {
   const frontKey = cellKey(state.player.x + direction.x, state.player.y + direction.y);
 
   return stage.objects.find((object) => {
-    if (object.kind === "warp") return false;
-    if (state.collectedKnowledge.has(object.id)) return false;
+    if (object.kind !== "slime" && object.kind !== "boss") return false;
+    if (state.defeatedEnemies.has(object.id)) return false;
     const objectKey = cellKey(object.x, object.y);
     return objectKey === currentKey || objectKey === frontKey;
   });
 }
 
-function interact(missMessage = "近くに調べられるものはありません") {
+function interact(missMessage = "剣を振りました") {
   const target = findInteractionTarget();
 
   if (!target) {
@@ -1210,11 +1445,17 @@ function interact(missMessage = "近くに調べられるものはありませ�
     return;
   }
 
-  if (target.kind === "knowledge") {
-    state.collectedKnowledge.add(target.id);
-    state.message = "知識を取得しました";
+  if (target.kind === "slime") {
+    state.defeatedEnemies.add(target.id);
+    state.message = "スライムを倒しました";
     render();
     return;
+  }
+
+  if (target.kind === "boss") {
+    state.defeatedEnemies.add(target.id);
+    state.message = "魔王を斬りました";
+    render();
   }
 
 }
@@ -1228,8 +1469,8 @@ function attack() {
     render();
   }, ATTACK_DURATION);
 
-  // 剣を振った方向の現在地・1マス前を、従来のA判定として調べる。
-  interact("剣を振りました");
+  // 剣を振った方向の現在地・1マス前にいる敵へ攻撃する。
+  interact();
 }
 
 function runAction(action) {
@@ -1250,12 +1491,31 @@ function runAction(action) {
       render();
     },
     "stage-info": () => {
-      state.message = `現在地：ステージ${currentStage().number}`;
+      state.message = `現在地：ステージ${stageLabel(currentStage())}`;
       render();
     },
   };
 
   actions[action]?.();
+}
+
+function debugLoadAdjacentStage(directionName) {
+  const direction = DIRECTIONS[directionName];
+  const position = currentStage().position;
+  const targetStageIndex = stageIndexAtWorldPosition(
+    position.x + direction.x,
+    position.y + direction.y,
+  );
+
+  if (targetStageIndex < 0) {
+    state.message = `デバッグ：${direction.label}側にステージはありません`;
+    render();
+    return false;
+  }
+
+  const targetStage = STAGES[targetStageIndex];
+  loadStage(targetStageIndex, `デバッグ移動：Stage ${stageLabel(targetStage)}`);
+  return true;
 }
 
 stageElement.addEventListener("pointerdown", (event) => {
@@ -1351,6 +1611,12 @@ window.addEventListener("keydown", (event) => {
   };
   const directionName = keyDirections[event.key];
   const sourceId = `key:${event.code || event.key}`;
+  if (directionName && event.shiftKey) {
+    event.preventDefault();
+    if (!event.repeat) debugLoadAdjacentStage(directionName);
+    return;
+  }
+
   if (directionName) {
     event.preventDefault();
     if (!event.repeat) {
@@ -1408,4 +1674,4 @@ window.addEventListener("blur", () => {
 
 validateStageData();
 startEnvironmentAnimation();
-loadStage(0, "矢印で移動し、知識のマスでAを押してください");
+loadStage(0, "右側のワープポイントを目指してください");
