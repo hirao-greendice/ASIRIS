@@ -264,7 +264,7 @@ const STAGES = Object.freeze([
     start: { x: 3, y: 6, facing: "right" },
     holes: [],
     floor: [
-      ...line(2, 3, 1),
+      ...line(1, 3, 2),
       ...rect(6, 3, 3, 2),
       ...rect(2, 5, 3, 3),
       ...line(5, 6, 4),

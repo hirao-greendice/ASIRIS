@@ -185,8 +185,13 @@ try {
       hasRemovedKnowledge: STAGES.every((entry) => (
         entry.objects.every((object) => object.kind !== "knowledge" && object.symbol !== "知")
       )),
-      landIsDetachedFromPanel: STAGES.every((entry) => (
-        entry.floor.every((cell) => cell.x >= 2 && cell.x <= 8 && cell.y >= 3 && cell.y <= 9)
+      stage1HasLandLeftOfUpperWarp: STAGES[0].floor.some((cell) => cell.x === 1 && cell.y === 3),
+      landIsDetachedFromPanelExceptStage1UpperLeft: STAGES.every((entry) => (
+        entry.floor.every((cell) => (
+          cell.x >= 2 && cell.x <= 8 && cell.y >= 3 && cell.y <= 9
+        ) || (
+          entry.id === "stage-01" && cell.x === 1 && cell.y === 3
+        ))
       )),
       warpChainIsConnected: mainStages.slice(0, -1).every((entry, index) => {
         const stageIndex = STAGES.indexOf(entry);
@@ -331,7 +336,11 @@ try {
   assert(initial.stageCount === 9, `ステージ数が${initial.stageCount}です。`);
   assert(initial.warpCounts.join(",") === "2,2,3,3,3,2,1,3,3", "各ステージのワープ数が違います。");
   assert(initial.hasRemovedKnowledge, "知のオブジェクトが残っています。");
-  assert(initial.landIsDetachedFromPanel, "Stage 1-1から7-1のLandがPanelに接しています。");
+  assert(initial.stage1HasLandLeftOfUpperWarp, "Stage 1-1左上ワープの左隣にLandがありません。");
+  assert(
+    initial.landIsDetachedFromPanelExceptStage1UpperLeft,
+    "指定されたStage 1-1左上以外のLandがPanelに接しています。",
+  );
   assert(initial.warpChainIsConnected, "ステージ間のワープが順番につながっていません。");
   assert(initial.warpChainIsReversible, "前のステージへ戻るワープの出口がつながっていません。");
   assert(initial.earlyStageRoutesAreConnected, "Stage 1-1から4-1の入口と出口がLandでつながっていません。");
