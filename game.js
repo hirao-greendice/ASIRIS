@@ -25,7 +25,7 @@ const TILE_CATALOG = Object.freeze({
   const ATLAS_ROWS = 22;
   const ATLAS_FRAME_COUNT = ATLAS_COLUMNS * ATLAS_ROWS;
   const ATLAS_STRIDE = 17;
-  const STORAGE_KEY = "asiris-stage-editor-v1";
+  const STORAGE_KEY = "asiris-stage-editor-v2";
   const MOVE_COOLDOWN = 85;
   const HOLD_DELAY = 260;
   const HOLD_INTERVAL = 135;
@@ -194,7 +194,7 @@ const TILE_CATALOG = Object.freeze({
     if (storageTimer !== null) window.clearTimeout(storageTimer);
     storageTimer = null;
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1, stages: workingStages }));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 2, stages: workingStages }));
       storageStatus = `保存済み ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
     } catch {
       storageStatus = "保存不可";
@@ -1002,7 +1002,7 @@ const TILE_CATALOG = Object.freeze({
     else render();
   });
 
-  tileSheet.src = "colored.png";
+  tileSheet.src = "colored.png?v=20260903-3";
   if (new URLSearchParams(location.search).get("atlas") === "1") initializeAtlasView();
   else initializeGame();
 })();

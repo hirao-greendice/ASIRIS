@@ -19,13 +19,14 @@ function assert(condition, message) {
 }
 
 assert(html.includes('width="192"') && html.includes('height="192"'), "Canvas内部サイズが192×192ではありません。");
-assert(html.includes('src="stages.js"') && html.indexOf('src="stages.js"') < html.indexOf('src="game.js"'), "stages.jsをgame.jsより先に読み込んでいません。");
+assert(html.includes('src="stages.js?v=20260903-3"') && html.indexOf('src="stages.js?v=20260903-3"') < html.indexOf('src="game.js?v=20260903-3"'), "stages.jsをgame.jsより先に読み込んでいません。");
 assert(html.includes('id="editor-palette"') && html.includes('id="debug-panel"'), "エディタまたはデバッグUIがありません。");
 assert(css.includes("image-rendering: pixelated") && css.includes("image-rendering: crisp-edges"), "ピクセル表示のCSSがありません。");
 assert(game.includes("const GRID_SIZE = 12") && game.includes("const TILE_SIZE = 16"), "12×12・16pxグリッドの定義がありません。");
 assert(game.includes("column * ATLAS_STRIDE") && game.includes("row * ATLAS_STRIDE"), "17px間隔のatlas切り出し処理がありません。");
 assert(game.includes("targetContext.scale(-1, 1)") && game.includes("globalAlpha"), "反転または半透明描画に対応していません。");
 assert(game.includes("localStorage.setItem") && game.includes("localStorage.getItem"), "localStorageの保存・読込処理がありません。");
+assert(game.includes('const STORAGE_KEY = "asiris-stage-editor-v2"'), "古いステージ保存データを無効化できていません。");
 assert(coloredPng.readUInt32BE(16) === 832 && coloredPng.readUInt32BE(20) === 373, "colored.pngが832×373ではありません。");
 
 const stageSandbox = {};
@@ -242,7 +243,7 @@ try {
     return {
       mode: snapshot.mode,
       tile: snapshot.stage.tiles[5][5],
-      stored: Boolean(localStorage.getItem("asiris-stage-editor-v1")),
+      stored: Boolean(localStorage.getItem("asiris-stage-editor-v2")),
       panelVisible: !document.querySelector("#editor-panel").hidden,
     };
   })()`);
