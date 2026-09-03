@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#10131a">
+    <title>ミリしらソード 知識設計ツール</title>
+    <link rel="stylesheet" href="knowledge-lab.css?v=20260903-2">
+  </head>
+  <body>
+    <header class="lab-header">
+      <div class="lab-brand">
+        <span class="lab-brand__mark" aria-hidden="true">K</span>
+        <div>
+          <p>ミリしらソード</p>
+          <h1>知識設計ツール <span>Knowledge Lab v1.4</span></h1>
+        </div>
+      </div>
+
+      <div class="lab-toolbar" aria-label="データ操作">
+        <span id="save-status" class="save-status"><i></i>自動保存</span>
+        <button id="export-button" class="tool-button" type="button">JSONを書き出す</button>
+        <button id="import-button" class="tool-button" type="button">JSONを読み込む</button>
+        <button id="restore-sample-button" class="tool-button" type="button">サンプルを復元</button>
+        <button id="clear-all-button" class="tool-button tool-button--danger" type="button">全データ削除</button>
+        <input id="import-input" type="file" accept="application/json,.json" hidden>
+      </div>
+    </header>
+
+    <main class="lab-grid">
+      <aside class="panel knowledge-panel" aria-labelledby="knowledge-list-title">
+        <div class="panel-heading">
+          <div>
+            <span class="panel-kicker">LIBRARY</span>
+            <h2 id="knowledge-list-title">知識一覧</h2>
+          </div>
+          <span id="knowledge-count" class="count-badge">0</span>
+        </div>
+
+        <label class="search-box">
+          <span aria-hidden="true">⌕</span>
+          <input id="knowledge-search" type="search" placeholder="知識を検索" autocomplete="off">
+        </label>
+
+        <button id="show-add-attribute" class="primary-button primary-button--compact" type="button">
+          ＋ 基本属性を追加
+        </button>
+
+        <form id="attribute-form" class="quick-form" hidden>
+          <label for="attribute-name">基本属性名</label>
+          <div class="quick-form__row">
+            <input id="attribute-name" type="text" maxlength="40" placeholder="例：赤い" autocomplete="off">
+            <button type="submit">追加</button>
+          </div>
+          <button class="text-button" type="button" data-action="cancel-attribute">キャンセル</button>
+        </form>
+
+        <div class="knowledge-scroll">
+          <section class="knowledge-group" aria-labelledby="attribute-group-title">
+            <div class="knowledge-group__heading">
+              <h3 id="attribute-group-title"><span class="type-dot type-dot--attribute"></span>基本属性</h3>
+              <span id="attribute-count">0</span>
+            </div>
+            <div id="attribute-list" class="knowledge-list"></div>
+          </section>
+
+          <section class="knowledge-group" aria-labelledby="concept-group-title">
+            <div class="knowledge-group__heading">
+              <h3 id="concept-group-title"><span class="type-dot type-dot--concept"></span>作成した概念</h3>
+              <span id="concept-count">0</span>
+            </div>
+            <div id="concept-list" class="knowledge-list"></div>
+          </section>
+        </div>
+      </aside>
+
+      <section class="panel builder-panel" aria-labelledby="builder-title">
+        <div class="panel-heading builder-heading">
+          <div>
+            <span class="panel-kicker">VENN EDITOR</span>
+            <h2 id="builder-title">知識をつくる</h2>
+          </div>
+          <div class="builder-heading__actions">
+            <span id="editor-mode" class="mode-badge">新規作成</span>
+            <button id="new-concept-button" class="icon-text-button" type="button">＋ 新規</button>
+          </div>
+        </div>
+
+        <form id="concept-form" novalidate>
+          <section class="attribute-setup" aria-labelledby="attribute-setup-title">
+            <div id="sample-notice" class="sample-notice">
+              <div>
+                <strong>サンプルデータを表示中</strong>
+                <span>「赤い」「丸い」「リンゴ」は登録済みです。</span>
+              </div>
+              <button id="start-empty-button" type="button">空にして最初から作る</button>
+            </div>
+            <div class="attribute-setup__heading">
+              <div>
+                <span class="step-number">01</span>
+                <h3 id="attribute-setup-title">まず、材料となる基本属性を登録</h3>
+              </div>
+              <p>例：赤い、丸い、固い</p>
+            </div>
+            <div class="attribute-setup__form">
+              <input id="inline-attribute-name" type="text" maxlength="40" placeholder="基本属性を入力（例：赤い）" autocomplete="off">
+              <button id="inline-add-attribute" type="button">＋ 追加</button>
+            </div>
+            <p id="inline-attribute-feedback" class="inline-feedback" aria-live="polite"></p>
+            <p class="attribute-setup__guide">1つずつ追加してください。追加した属性は、すぐ下のA・Bで選択できます。</p>
+            <div id="inline-attribute-list" class="attribute-chip-list" aria-label="登録済みの基本属性"></div>
+          </section>
+
+          <label class="field field--name" for="concept-name">
+            <span><i class="field-step">02</i>新しく覚えさせる言葉</span>
+            <input id="concept-name" type="text" maxlength="40" placeholder="覚えさせる言葉を入力" autocomplete="off">
+          </label>
+
+          <div class="source-grid">
+            <label class="field field--source-a" for="left-source">
+              <span><b>A</b> 左の概念</span>
+              <select id="left-source"></select>
+            </label>
+            <label class="field field--source-b" for="right-source">
+              <span><b>B</b> 右の概念</span>
+              <select id="right-source"></select>
+            </label>
+          </div>
+          <p class="source-guide">基本属性だけでなく、保存済みの知識もA・Bの材料として選べます。</p>
+
+          <section class="venn-editor" aria-labelledby="venn-title">
+            <div class="section-title-row">
+              <div>
+                <span class="step-number">03</span>
+                <h3 id="venn-title">成立する領域を選択</h3>
+              </div>
+              <p>複数選択可</p>
+            </div>
+
+            <svg id="venn-svg" class="venn-svg" viewBox="0 0 560 330" role="group" aria-label="4領域を選べるベン図">
+              <defs>
+                <mask id="outside-mask">
+                  <rect width="560" height="330" fill="white"></rect>
+                  <circle cx="220" cy="165" r="115" fill="black"></circle>
+                  <circle cx="340" cy="165" r="115" fill="black"></circle>
+                </mask>
+                <pattern id="hatch-both" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                  <rect width="12" height="12" fill="#642b40"></rect>
+                  <line x1="0" y1="0" x2="0" y2="12" stroke="#ed668d" stroke-width="4"></line>
+                </pattern>
+                <pattern id="hatch-left" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                  <rect width="12" height="12" fill="#263f60"></rect>
+                  <line x1="0" y1="0" x2="0" y2="12" stroke="#63a6f5" stroke-width="4"></line>
+                </pattern>
+                <pattern id="hatch-right" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                  <rect width="12" height="12" fill="#5b3d24"></rect>
+                  <line x1="0" y1="0" x2="0" y2="12" stroke="#e7a35b" stroke-width="4"></line>
+                </pattern>
+                <pattern id="hatch-neither" width="12" height="12" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                  <rect width="12" height="12" fill="#382b51"></rect>
+                  <line x1="0" y1="0" x2="0" y2="12" stroke="#9976d8" stroke-width="4"></line>
+                </pattern>
+              </defs>
+
+              <g class="venn-region" data-region="neither" role="button" tabindex="0" aria-label="AでもBでもない領域">
+                <rect class="venn-region__shape" x="8" y="8" width="544" height="314" rx="14" mask="url(#outside-mask)"></rect>
+                <text class="venn-region__check" x="34" y="42">✓</text>
+              </g>
+              <g class="venn-region" data-region="leftOnly" role="button" tabindex="0" aria-label="Aのみの領域">
+                <path class="venn-region__shape" fill-rule="evenodd" d="M220 50a115 115 0 1 0 0 230a115 115 0 1 0 0-230 M280 67a115 115 0 0 1 0 196a115 115 0 0 1 0-196Z"></path>
+                <text class="venn-region__check" x="170" y="174">✓</text>
+              </g>
+              <g class="venn-region" data-region="rightOnly" role="button" tabindex="0" aria-label="Bのみの領域">
+                <path class="venn-region__shape" fill-rule="evenodd" d="M340 50a115 115 0 1 0 0 230a115 115 0 1 0 0-230 M280 67a115 115 0 0 0 0 196a115 115 0 0 0 0-196Z"></path>
+                <text class="venn-region__check" x="380" y="174">✓</text>
+              </g>
+              <g class="venn-region" data-region="both" role="button" tabindex="0" aria-label="AとBの両方の領域">
+                <path class="venn-region__shape" d="M280 67a115 115 0 0 1 0 196a115 115 0 0 1 0-196Z"></path>
+                <text class="venn-region__check" x="270" y="174">✓</text>
+              </g>
+
+              <circle class="venn-outline" cx="220" cy="165" r="115"></circle>
+              <circle class="venn-outline" cx="340" cy="165" r="115"></circle>
+              <text id="venn-label-a" class="venn-label" x="178" y="38">A</text>
+              <text id="venn-label-b" class="venn-label" x="372" y="38">B</text>
+            </svg>
+
+            <div class="region-grid" aria-label="ベン図領域の選択状態">
+              <button type="button" data-region-button="both"><i></i><span>A AND B<small>両方</small></span><b>✓</b></button>
+              <button type="button" data-region-button="leftOnly"><i></i><span>A AND NOT B<small>Aのみ</small></span><b>✓</b></button>
+              <button type="button" data-region-button="rightOnly"><i></i><span>NOT A AND B<small>Bのみ</small></span><b>✓</b></button>
+              <button type="button" data-region-button="neither"><i></i><span>NOT A AND NOT B<small>どちらでもない</small></span><b>✓</b></button>
+            </div>
+          </section>
+
+          <section class="condition-preview" aria-live="polite">
+            <span>現在の条件</span>
+            <p id="condition-japanese">領域を1つ以上選択してください</p>
+            <code id="condition-expression">—</code>
+          </section>
+
+          <div id="validation-messages" class="validation-messages" aria-live="polite"></div>
+
+          <button id="save-concept-button" class="primary-button primary-button--save" type="submit">
+            この内容で覚えさせる
+          </button>
+        </form>
+      </section>
+
+      <aside class="panel analysis-panel" aria-labelledby="analysis-title">
+        <div class="analysis-header">
+          <span class="panel-kicker">INSPECTOR</span>
+          <div class="analysis-header__title">
+            <div>
+              <h2 id="analysis-title">知識解析</h2>
+              <p id="analysis-subtitle">知識を選択してください</p>
+            </div>
+            <span id="analysis-type" class="type-badge" hidden></span>
+          </div>
+        </div>
+
+        <div id="analysis-tabs" class="analysis-tabs" role="tablist" aria-label="解析表示モード">
+          <button class="is-active" type="button" role="tab" data-tab="summary">かんたん表示</button>
+          <button type="button" role="tab" data-tab="patterns">成立パターン</button>
+          <button type="button" role="tab" data-tab="tree">分解ツリー</button>
+          <button type="button" role="tab" data-tab="venn">ベン図</button>
+          <button type="button" role="tab" data-tab="test">条件テスト</button>
+          <button type="button" role="tab" data-tab="map">関係図</button>
+        </div>
+
+        <div id="analysis-content" class="analysis-content">
+          <div class="empty-state">
+            <span aria-hidden="true">◇</span>
+            <h3>解析する知識を選択</h3>
+            <p>左の一覧から単語を選ぶと、定義や成立パターンを確認できます。</p>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+    <script src="knowledge-lab.js?v=20260903-2"></script>
+  </body>
+</html>

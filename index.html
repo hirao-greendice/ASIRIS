@@ -3,48 +3,80 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="transparent">
-    <title>スライム・ワープ</title>
-    <link rel="stylesheet" href="styles.css">
+    <meta name="theme-color" content="#c9a8cf">
+    <title>迷いの森 - UIモック</title>
+    <link rel="stylesheet" href="style.css">
   </head>
   <body>
-    <main class="game-shell">
-      <div class="game-frame">
-        <header class="top-hud" aria-label="ステージ情報と字幕">
-          <button class="hud-button hud-button--settings" type="button" data-action="settings" aria-label="設定"></button>
+    <main id="app" class="app">
+      <a class="knowledge-lab-launcher" href="knowledge-lab.html">開発用：知識設計ツールを開く</a>
+      <header id="header" class="header">
+        <button class="header-button" type="button" aria-label="設定">
+          <span aria-hidden="true">⚙︎</span>
+        </button>
+        <h1 class="header-title">迷いの森</h1>
+        <button class="header-button header-button--hint" type="button" aria-label="ヒント">
+          <span class="bulb-icon" aria-hidden="true"></span>
+        </button>
+      </header>
 
-          <div class="hud-stage-title" aria-label="現在のステージ">
-            Stage <span id="hud-stage-number">1</span>
-          </div>
+      <section id="top-display" class="top-display" aria-label="問題画像表示エリア"></section>
 
-          <button class="hud-button hud-button--hint" type="button" data-action="hint" aria-label="ヒント"></button>
+      <section id="question-panel" class="question-panel" aria-label="問題文エリア">
+        <div class="question-panel__content"></div>
+      </section>
 
-          <section id="dialogue-box" class="dialogue-box" aria-live="polite" aria-atomic="true">
-            <div class="dialogue-portrait-frame" aria-hidden="true">
-              <img id="dialogue-portrait" class="dialogue-portrait" src="asset/hero-right-idle.png" alt="">
-            </div>
-            <div class="dialogue-copy">
-              <div id="dialogue-speaker" class="dialogue-speaker">勇者</div>
-              <p id="dialogue-text" class="dialogue-text">読み込み中...</p>
-            </div>
-          </section>
-        </header>
+      <section id="dialog-panel" class="dialog-panel" aria-label="ソード君との会話">
+        <div class="dialog-panel__portrait" aria-hidden="true">
+          <span class="sword-icon">🗡️</span>
+        </div>
+        <div class="dialog-panel__text">
+          <h2>ソード君</h2>
+          <p>リンゴってなんだ？</p>
+        </div>
+      </section>
 
-        <section
-          id="stage"
-          class="stage"
-          aria-label="11列18行のゲーム盤面"
-          aria-describedby="keyboard-help"
-        ></section>
-      </div>
-
-      <p id="keyboard-help" class="visually-hidden">
-        矢印キーで移動、AキーまたはEnterキーで剣を振る、Uキーで一手戻します。
-      </p>
+      <button id="teach-button" class="teach-button" type="button">
+        ソード君におしえる
+      </button>
     </main>
 
-    <noscript>このゲームを動かすにはJavaScriptを有効にしてください。</noscript>
-    <script src="game.js"></script>
+    <div
+      id="teach-modal"
+      class="teach-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="teach-modal-title"
+      aria-hidden="true"
+      hidden
+    >
+      <div class="teach-modal__content" tabindex="-1">
+        <h2 id="teach-modal-title" class="visually-hidden">ソード君に教える</h2>
+
+        <section id="venn-area" class="venn-area" aria-label="謎アと謎イのベン図">
+          <svg class="venn-diagram" viewBox="0 0 320 190" role="img" aria-label="2つの円が重なったベン図">
+            <circle cx="112" cy="110" r="62" fill="none" stroke="#565656" stroke-width="1.5"></circle>
+            <circle cx="208" cy="110" r="62" fill="none" stroke="#565656" stroke-width="1.5"></circle>
+            <path
+              d="M160 70 A62 62 0 0 1 160 150 A62 62 0 0 1 160 70 Z"
+              fill="#de5275"
+              stroke="#565656"
+              stroke-width="1.5"
+            ></path>
+          </svg>
+          <span class="venn-label venn-label--left">謎ア</span>
+          <span class="venn-label venn-label--right">謎イ</span>
+        </section>
+
+        <section class="option-grid" aria-label="4つの回答領域">
+          <div class="option-box"><span class="option-box__label">ア</span></div>
+          <div class="option-box"><span class="option-box__label">イ</span></div>
+          <div class="option-box"><span class="option-box__label">ウ</span></div>
+          <div class="option-box"><span class="option-box__label">エ</span></div>
+        </section>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
   </body>
-  
 </html>
