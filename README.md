@@ -1,14 +1,15 @@
-# ASIRIS 2D Prototype
+# ASIRIS
 
-12×12マスの見下ろし型2Dゲームを、すぐ移動・編集・テストするための基盤です。HTML、CSS、Vanilla JavaScript、Canvas 2D APIだけで動作し、ビルドや`fetch()`は不要です。
+「迷いの森」UIモック、知識設計ツール、12×12マスの見下ろし型2Dプロトタイプをまとめた静的サイトです。
 
 ## 起動
 
 `index.html`をブラウザで直接開きます。静的ファイルだけなのでGitHub Pagesにもそのまま配置できます。
 
-- 通常画面：`index.html`
-- ステージ指定：`index.html?stage=stage01`
-- 素材一覧：`index.html?atlas=1`
+- 迷いの森 UIモック：`index.html`
+- 2Dプロトタイプ：`game.html`
+- ステージ指定：`game.html?stage=stage01`
+- 素材一覧：`game.html?atlas=1`
 - 知識設計ツール：`knowledge-lab.html`（ゲーム画面右上の `KNOWLEDGE LAB` からも開けます）
 
 ## 操作
@@ -78,7 +79,7 @@ const sourceX = column * 17;
 const sourceY = row * 17;
 ```
 
-`index.html?atlas=1`では全1078フレームを確認でき、クリックで番号をコピーできます。
+`game.html?atlas=1`では全1078フレームを確認でき、クリックで番号をコピーできます。
 
 ## テスト
 

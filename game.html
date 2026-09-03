@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#08070d">
+    <title>ASIRIS 2D Prototype</title>
+    <link rel="stylesheet" href="game.css?v=20260903-4">
+    <script src="stages.js?v=20260903-4" defer></script>
+    <script src="game.js?v=20260903-4" defer></script>
+  </head>
+  <body>
+    <main id="game-app" class="game-app">
+      <header class="game-header">
+        <h1>ASIRIS // 2D PROTOTYPE</h1>
+        <div class="game-header__actions">
+          <span id="stage-label">stage01</span>
+          <a class="knowledge-lab-link" href="knowledge-lab.html?v=20260903-4">KNOWLEDGE LAB</a>
+        </div>
+      </header>
+
+      <div class="play-column">
+        <section class="canvas-frame" aria-label="12かける12のゲーム画面">
+          <canvas
+            id="game-canvas"
+            width="192"
+            height="192"
+            tabindex="0"
+            role="img"
+            aria-label="12かける12の見下ろし型ステージ"
+          ></canvas>
+          <span id="mode-badge" class="mode-badge">PLAY</span>
+          <span id="asset-status" class="asset-status">LOADING TILESET</span>
+        </section>
+
+        <section class="game-log" aria-label="操作ログ" aria-live="polite">
+          <span aria-hidden="true">›</span>
+          <p id="game-log-text">ステージを読み込んでいます</p>
+        </section>
+
+        <section class="mobile-controls" aria-label="ゲーム操作">
+          <div class="d-pad" aria-label="方向ボタン">
+            <button class="d-pad__button d-pad__up" type="button" data-direction="up" aria-label="上へ移動">△</button>
+            <button class="d-pad__button d-pad__left" type="button" data-direction="left" aria-label="左へ移動">◁</button>
+            <span class="d-pad__center" aria-hidden="true"></span>
+            <button class="d-pad__button d-pad__right" type="button" data-direction="right" aria-label="右へ移動">▷</button>
+            <button class="d-pad__button d-pad__down" type="button" data-direction="down" aria-label="下へ移動">▽</button>
+          </div>
+
+          <div class="action-pad" aria-label="アクションボタン">
+            <button id="action-button" class="round-button round-button--action" type="button">
+              <strong>A</strong><span>調べる</span>
+            </button>
+            <button id="cancel-button" class="round-button round-button--cancel" type="button">
+              <strong>B</strong><span>戻る</span>
+            </button>
+          </div>
+        </section>
+
+        <nav class="quick-tools" aria-label="簡易デバッグ操作">
+          <button id="reset-button" type="button">RESET</button>
+          <button id="edit-button" type="button" aria-pressed="false">EDIT</button>
+          <button id="grid-button" type="button" aria-pressed="false">GRID</button>
+          <button id="debug-toggle-button" type="button">DEBUG</button>
+        </nav>
+      </div>
+
+      <section id="editor-panel" class="tool-panel editor-panel" hidden>
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">STAGE EDITOR</span>
+            <h2>配置パレット</h2>
+          </div>
+          <p>クリック／タップ、PCではドラッグで連続配置</p>
+        </div>
+        <div id="editor-palette" class="editor-palette"></div>
+        <div class="editor-actions">
+          <button id="test-play-button" type="button">PLAY TEST</button>
+          <button id="editor-copy-button" type="button">JSON COPY</button>
+          <button id="editor-restore-button" type="button">初期状態へ戻す</button>
+        </div>
+      </section>
+
+      <details id="debug-panel" class="tool-panel debug-panel">
+        <summary>DEBUG PANEL</summary>
+        <dl class="debug-values">
+          <div><dt>STAGE</dt><dd id="debug-stage-id">-</dd></div>
+          <div><dt>PLAYER X</dt><dd id="debug-player-x">-</dd></div>
+          <div><dt>PLAYER Y</dt><dd id="debug-player-y">-</dd></div>
+          <div><dt>FACING</dt><dd id="debug-facing">-</dd></div>
+          <div><dt>MODE</dt><dd id="debug-mode">-</dd></div>
+          <div><dt>SELECTED</dt><dd id="debug-selected">-</dd></div>
+          <div><dt>FRONT</dt><dd id="debug-front-object">-</dd></div>
+          <div><dt>STORAGE</dt><dd id="debug-storage">-</dd></div>
+        </dl>
+
+        <div class="debug-actions">
+          <button id="debug-reset-button" type="button">RESET</button>
+          <button id="previous-stage-button" type="button">PREV</button>
+          <button id="next-stage-button" type="button">NEXT</button>
+          <button id="debug-grid-button" type="button">GRID</button>
+          <button id="collision-button" type="button" aria-pressed="false">COLLISION</button>
+          <button id="warp-button" type="button" aria-pressed="false">WARP: OFF</button>
+          <button id="open-doors-button" type="button">OPEN DOORS</button>
+          <button id="debug-copy-button" type="button">COPY JSON</button>
+        </div>
+
+        <label class="json-field" for="stage-json">
+          <span>STAGE JSON</span>
+          <textarea id="stage-json" rows="10" spellcheck="false" placeholder="ここへステージJSONを貼り付け"></textarea>
+        </label>
+        <div class="json-actions">
+          <button id="load-json-button" type="button">JSONを読み込む</button>
+          <button id="restore-data-button" type="button">初期データへ戻す</button>
+        </div>
+      </details>
+
+      <p class="key-help">
+        MOVE: ARROWS / WASD　 ACTION: Z / SPACE　 CANCEL: X / ESC<br>
+        RESET: R　 EDIT: E　 GRID: G　 STAGE: P / N
+      </p>
+    </main>
+
+    <main id="atlas-view" class="atlas-view" hidden>
+      <header class="atlas-header">
+        <div>
+          <span class="eyebrow">COLORED.PNG</span>
+          <h1>SPRITE ATLAS // 0–1077</h1>
+        </div>
+        <a href="game.html?v=20260903-4">GAMEへ戻る</a>
+      </header>
+      <p id="atlas-status" class="atlas-status">素材を読み込んでいます</p>
+      <section id="atlas-grid" class="atlas-grid" aria-label="1078フレームの素材一覧"></section>
+    </main>
+  </body>
+</html>

@@ -8,8 +8,10 @@ import { runInNewContext } from "node:vm";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, "..");
-const html = readFileSync(resolve(root, "index.html"), "utf8");
-const css = readFileSync(resolve(root, "style.css"), "utf8");
+const landingHtml = readFileSync(resolve(root, "index.html"), "utf8");
+const landingCss = readFileSync(resolve(root, "style.css"), "utf8");
+const html = readFileSync(resolve(root, "game.html"), "utf8");
+const css = readFileSync(resolve(root, "game.css"), "utf8");
 const game = readFileSync(resolve(root, "game.js"), "utf8");
 const stagesSource = readFileSync(resolve(root, "stages.js"), "utf8");
 const coloredPng = readFileSync(resolve(root, "colored.png"));
@@ -19,7 +21,9 @@ function assert(condition, message) {
 }
 
 assert(html.includes('width="192"') && html.includes('height="192"'), "Canvas内部サイズが192×192ではありません。");
-assert(html.includes('src="stages.js?v=20260903-3"') && html.indexOf('src="stages.js?v=20260903-3"') < html.indexOf('src="game.js?v=20260903-3"'), "stages.jsをgame.jsより先に読み込んでいません。");
+assert(landingHtml.includes("迷いの森 - UIモック") && landingHtml.includes('src="script.js?v=20260903-4"'), "公開トップが最新UIになっていません。");
+assert(landingCss.includes("--page-purple: #c9a8cf"), "公開トップのスタイルが最新UI用ではありません。");
+assert(html.includes('src="stages.js?v=20260903-4"') && html.indexOf('src="stages.js?v=20260903-4"') < html.indexOf('src="game.js?v=20260903-4"'), "stages.jsをgame.jsより先に読み込んでいません。");
 assert(html.includes('id="editor-palette"') && html.includes('id="debug-panel"'), "エディタまたはデバッグUIがありません。");
 assert(css.includes("image-rendering: pixelated") && css.includes("image-rendering: crisp-edges"), "ピクセル表示のCSSがありません。");
 assert(game.includes("const GRID_SIZE = 12") && game.includes("const TILE_SIZE = 16"), "12×12・16pxグリッドの定義がありません。");
@@ -159,7 +163,13 @@ try {
     mobile: true,
   });
 
-  const pageUrl = pathToFileURL(resolve(root, "index.html")).href;
+  const landingUrl = pathToFileURL(resolve(root, "index.html")).href;
+  await send("Page.navigate", { url: landingUrl });
+  await waitFor(`document.readyState === "complete" && Boolean(document.querySelector("#teach-button"))`, "最新UIを読み込めませんでした。");
+  await evaluate(`document.querySelector("#teach-button").click()`);
+  assert(await evaluate(`!document.querySelector("#teach-modal").hidden`), "最新UIの回答モーダルを開けませんでした。");
+
+  const pageUrl = pathToFileURL(resolve(root, "game.html")).href;
   await send("Page.navigate", { url: pageUrl });
   await waitFor(
     `Boolean(globalThis.ASIRIS_PROTOTYPE?.getSnapshot().tileSheetReady)`,
