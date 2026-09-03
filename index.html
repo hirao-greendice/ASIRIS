@@ -3,80 +3,134 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <meta name="theme-color" content="#c9a8cf">
-    <title>迷いの森 - UIモック</title>
+    <meta name="theme-color" content="#08070d">
+    <title>ASIRIS 2D Prototype</title>
     <link rel="stylesheet" href="style.css">
+    <script src="stages.js" defer></script>
+    <script src="game.js" defer></script>
   </head>
   <body>
-    <main id="app" class="app">
-      <a class="knowledge-lab-launcher" href="knowledge-lab.html">開発用：知識設計ツールを開く</a>
-      <header id="header" class="header">
-        <button class="header-button" type="button" aria-label="設定">
-          <span aria-hidden="true">⚙︎</span>
-        </button>
-        <h1 class="header-title">迷いの森</h1>
-        <button class="header-button header-button--hint" type="button" aria-label="ヒント">
-          <span class="bulb-icon" aria-hidden="true"></span>
-        </button>
+    <main id="game-app" class="game-app">
+      <header class="game-header">
+        <h1>ASIRIS // 2D PROTOTYPE</h1>
+        <div class="game-header__actions">
+          <span id="stage-label">stage01</span>
+          <a class="knowledge-lab-link" href="knowledge-lab.html">KNOWLEDGE LAB</a>
+        </div>
       </header>
 
-      <section id="top-display" class="top-display" aria-label="問題画像表示エリア"></section>
+      <div class="play-column">
+        <section class="canvas-frame" aria-label="12かける12のゲーム画面">
+          <canvas
+            id="game-canvas"
+            width="192"
+            height="192"
+            tabindex="0"
+            role="img"
+            aria-label="12かける12の見下ろし型ステージ"
+          ></canvas>
+          <span id="mode-badge" class="mode-badge">PLAY</span>
+          <span id="asset-status" class="asset-status">LOADING TILESET</span>
+        </section>
 
-      <section id="question-panel" class="question-panel" aria-label="問題文エリア">
-        <div class="question-panel__content"></div>
+        <section class="game-log" aria-label="操作ログ" aria-live="polite">
+          <span aria-hidden="true">›</span>
+          <p id="game-log-text">ステージを読み込んでいます</p>
+        </section>
+
+        <section class="mobile-controls" aria-label="ゲーム操作">
+          <div class="d-pad" aria-label="方向ボタン">
+            <button class="d-pad__button d-pad__up" type="button" data-direction="up" aria-label="上へ移動">△</button>
+            <button class="d-pad__button d-pad__left" type="button" data-direction="left" aria-label="左へ移動">◁</button>
+            <span class="d-pad__center" aria-hidden="true"></span>
+            <button class="d-pad__button d-pad__right" type="button" data-direction="right" aria-label="右へ移動">▷</button>
+            <button class="d-pad__button d-pad__down" type="button" data-direction="down" aria-label="下へ移動">▽</button>
+          </div>
+
+          <div class="action-pad" aria-label="アクションボタン">
+            <button id="action-button" class="round-button round-button--action" type="button">
+              <strong>A</strong><span>調べる</span>
+            </button>
+            <button id="cancel-button" class="round-button round-button--cancel" type="button">
+              <strong>B</strong><span>戻る</span>
+            </button>
+          </div>
+        </section>
+
+        <nav class="quick-tools" aria-label="簡易デバッグ操作">
+          <button id="reset-button" type="button">RESET</button>
+          <button id="edit-button" type="button" aria-pressed="false">EDIT</button>
+          <button id="grid-button" type="button" aria-pressed="false">GRID</button>
+          <button id="debug-toggle-button" type="button">DEBUG</button>
+        </nav>
+      </div>
+
+      <section id="editor-panel" class="tool-panel editor-panel" hidden>
+        <div class="panel-heading">
+          <div>
+            <span class="eyebrow">STAGE EDITOR</span>
+            <h2>配置パレット</h2>
+          </div>
+          <p>クリック／タップ、PCではドラッグで連続配置</p>
+        </div>
+        <div id="editor-palette" class="editor-palette"></div>
+        <div class="editor-actions">
+          <button id="test-play-button" type="button">PLAY TEST</button>
+          <button id="editor-copy-button" type="button">JSON COPY</button>
+          <button id="editor-restore-button" type="button">初期状態へ戻す</button>
+        </div>
       </section>
 
-      <section id="dialog-panel" class="dialog-panel" aria-label="ソード君との会話">
-        <div class="dialog-panel__portrait" aria-hidden="true">
-          <span class="sword-icon">🗡️</span>
-        </div>
-        <div class="dialog-panel__text">
-          <h2>ソード君</h2>
-          <p>リンゴってなんだ？</p>
-        </div>
-      </section>
+      <details id="debug-panel" class="tool-panel debug-panel">
+        <summary>DEBUG PANEL</summary>
+        <dl class="debug-values">
+          <div><dt>STAGE</dt><dd id="debug-stage-id">-</dd></div>
+          <div><dt>PLAYER X</dt><dd id="debug-player-x">-</dd></div>
+          <div><dt>PLAYER Y</dt><dd id="debug-player-y">-</dd></div>
+          <div><dt>FACING</dt><dd id="debug-facing">-</dd></div>
+          <div><dt>MODE</dt><dd id="debug-mode">-</dd></div>
+          <div><dt>SELECTED</dt><dd id="debug-selected">-</dd></div>
+          <div><dt>FRONT</dt><dd id="debug-front-object">-</dd></div>
+          <div><dt>STORAGE</dt><dd id="debug-storage">-</dd></div>
+        </dl>
 
-      <button id="teach-button" class="teach-button" type="button">
-        ソード君におしえる
-      </button>
+        <div class="debug-actions">
+          <button id="debug-reset-button" type="button">RESET</button>
+          <button id="previous-stage-button" type="button">PREV</button>
+          <button id="next-stage-button" type="button">NEXT</button>
+          <button id="debug-grid-button" type="button">GRID</button>
+          <button id="collision-button" type="button" aria-pressed="false">COLLISION</button>
+          <button id="warp-button" type="button" aria-pressed="false">WARP: OFF</button>
+          <button id="open-doors-button" type="button">OPEN DOORS</button>
+          <button id="debug-copy-button" type="button">COPY JSON</button>
+        </div>
+
+        <label class="json-field" for="stage-json">
+          <span>STAGE JSON</span>
+          <textarea id="stage-json" rows="10" spellcheck="false" placeholder="ここへステージJSONを貼り付け"></textarea>
+        </label>
+        <div class="json-actions">
+          <button id="load-json-button" type="button">JSONを読み込む</button>
+          <button id="restore-data-button" type="button">初期データへ戻す</button>
+        </div>
+      </details>
+
+      <p class="key-help">
+        MOVE: ARROWS / WASD　 ACTION: Z / SPACE　 CANCEL: X / ESC<br>
+        RESET: R　 EDIT: E　 GRID: G　 STAGE: P / N
+      </p>
     </main>
 
-    <div
-      id="teach-modal"
-      class="teach-modal"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="teach-modal-title"
-      aria-hidden="true"
-      hidden
-    >
-      <div class="teach-modal__content" tabindex="-1">
-        <h2 id="teach-modal-title" class="visually-hidden">ソード君に教える</h2>
-
-        <section id="venn-area" class="venn-area" aria-label="謎アと謎イのベン図">
-          <svg class="venn-diagram" viewBox="0 0 320 190" role="img" aria-label="2つの円が重なったベン図">
-            <circle cx="112" cy="110" r="62" fill="none" stroke="#565656" stroke-width="1.5"></circle>
-            <circle cx="208" cy="110" r="62" fill="none" stroke="#565656" stroke-width="1.5"></circle>
-            <path
-              d="M160 70 A62 62 0 0 1 160 150 A62 62 0 0 1 160 70 Z"
-              fill="#de5275"
-              stroke="#565656"
-              stroke-width="1.5"
-            ></path>
-          </svg>
-          <span class="venn-label venn-label--left">謎ア</span>
-          <span class="venn-label venn-label--right">謎イ</span>
-        </section>
-
-        <section class="option-grid" aria-label="4つの回答領域">
-          <div class="option-box"><span class="option-box__label">ア</span></div>
-          <div class="option-box"><span class="option-box__label">イ</span></div>
-          <div class="option-box"><span class="option-box__label">ウ</span></div>
-          <div class="option-box"><span class="option-box__label">エ</span></div>
-        </section>
-      </div>
-    </div>
-
-    <script src="script.js"></script>
+    <main id="atlas-view" class="atlas-view" hidden>
+      <header class="atlas-header">
+        <div>
+          <span class="eyebrow">COLORED.PNG</span>
+          <h1>SPRITE ATLAS // 0–1077</h1>
+        </div>
+        <a href="index.html">GAMEへ戻る</a>
+      </header>
+      <p id="atlas-status" class="atlas-status">素材を読み込んでいます</p>
+      <section id="atlas-grid" class="atlas-grid" aria-label="1078フレームの素材一覧"></section>
+    </main>
   </body>
 </html>
